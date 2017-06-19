@@ -128,6 +128,15 @@ int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length,
 			}
 			break;
 
+		case AF_ATTR_WIFISTAD_DEBUG_LEVEL: {
+			int8_t level = *(int8_t *)value;
+			if (level < LOG_DEBUG_OFF) {
+				level = LOG_DEBUG_OFF;
+			}
+			g_debugLevel = level;
+			AFLOG_INFO("connmgr_attr_on_owner_set:i debug_level=%d", level);
+			break;
+		}
 
 		default:
 			AFLOG_ERR("wifistad_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
@@ -195,6 +204,13 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
 									  (uint8_t *)&m->wifi_steady_state, sizeof(uint8_t));
 			break;
+
+		case AF_ATTR_WIFISTAD_DEBUG_LEVEL : {
+				int8_t level = g_debugLevel;
+				AFLOG_INFO("wifistad_attr_on_get_request: debug_level=%d", level);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&level, sizeof(int8_t));
+			}
+            break;
 
 		default:
 			af_attr_send_get_response(AF_ATTR_STATUS_ATTR_ID_NOT_FOUND, getId, (uint8_t *)"", 0);

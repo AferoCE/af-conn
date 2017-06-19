@@ -118,6 +118,16 @@ int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, 
 	AFLOG_DEBUG2("connmgr_attr_on_owner_set:: attributeId=%d value=%s", attributeId, (char *) value);
 
 	switch (attributeId) {
+		case AF_ATTR_CONNMGR_DEBUG_LEVEL: {
+			int8_t level = *(int8_t *)value;
+			if (level < LOG_DEBUG_OFF) {
+				level = LOG_DEBUG_OFF;
+			}
+			g_debugLevel = level;
+			AFLOG_INFO("connmgr_attr_on_owner_set:i debug_level=%d", level);
+			break;
+		}
+
 		default:
 			AFLOG_ERR("connmgr_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
             status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
@@ -156,6 +166,12 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 			value = cm_get_network_type();
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
 			break;
+
+        case AF_ATTR_CONNMGR_DEBUG_LEVEL:
+            value = g_debugLevel;
+            AFLOG_INFO("connmgr_attr_on_get_request: debug_level=%d", value);
+            af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+            break;
 
 		default:
 			af_attr_send_get_response(AF_ATTR_STATUS_ATTR_ID_NOT_FOUND, getId, (uint8_t *)"", 0);

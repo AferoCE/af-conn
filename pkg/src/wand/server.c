@@ -129,6 +129,15 @@ void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
             af_attr_send_get_response(0, getId, &exists, sizeof(exists));
             break;
         }
+
+        case AF_ATTR_WAN_DEBUG_LEVEL:
+        {
+            uint8_t value = g_debugLevel;
+            AFLOG_INFO("wan_get_request: debug_level=%d", value);
+            af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(uint8_t));
+            break;
+        }
+
         default :
             break;
     }
@@ -140,6 +149,38 @@ void notify_wan_existence(void)
     af_attr_set(AF_ATTR_WAN_AVAILABLE, &exists, sizeof(exists), NULL, NULL);
 }
 
+
+int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
+{
+    int status = AF_ATTR_STATUS_OK;
+
+    if (value == NULL) {
+        AFLOG_ERR("wan_attr_on_owner_set:: invalid value=%p", value);
+        return AF_ATTR_STATUS_UNSPECIFIED;
+    }
+
+    switch (attributeId) {
+        case AF_ATTR_WAN_DEBUG_LEVEL: {
+            int8_t level = *(int8_t *)value;
+            if (level < LOG_DEBUG_OFF) {
+                level = LOG_DEBUG_OFF;
+            }
+            g_debugLevel = level;
+            AFLOG_INFO("wan_attr_on_owner_set:i debug_level=%d", level);
+            break;
+        }
+
+        default:
+            AFLOG_ERR("wan_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
+            status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
+            break;
+
+    } // switch
+
+    return status;
+}
+
+
 int wan_ipc_init(struct event_base *base)
 {
     if (base == NULL) {
@@ -150,7 +191,7 @@ int wan_ipc_init(struct event_base *base)
     int err = af_attr_open(base, "IPC.WAN",
                            NUM_WAND_ATTR_RANGES, &g_wand_attr_ranges[0],
                            wan_attr_on_notify,    // on_notify
-                           NULL,                  // on_set
+                           wan_attr_on_owner_set, // on_set
                            wan_get_request,       // on_get
                            wan_attr_on_close,     // on_close
                            NULL,                  // on_open
