@@ -1,0 +1,73 @@
+This file contains notes pertaining to the setup of the firewall for Bento:
+
+a) The file afero_whitelist.txt  (in dir: connectivity/pkg/files/etc/config)
+   - List the server URLs or addresses of the Afero servers used for connectivity services.
+   - The whitelist indicates that the specified server are allowed network acesss on bento.
+   - Format of the whitelist in the file: each URL or address is a single entry. Supports comment and while space/line.
+
+   - The whitelist file is read in the script file: create_afero_whitelist.sh
+      - an incoming permit rule is created for each entry in whitelist 
+      - an output permit rule is created for each entry in the whitelist 
+
+b) script file: create_afero_whitelist.sh 
+   - in dir: connectivity/pkg/files/etc/config
+   - on bento: can be found on the /etc/config/create_afero_whitelist.sh 
+   - Create the incoming and outgoing rules for each whitelist server.
+   - Invoked through the firewall reload mechanism. 
+
+		See: /etc/init.d/firewall 
+
+   - in the file /etc/config/firewall.user (on bento), it specifies the afero firewall rules, which
+     includes the creation of the whitelist rule chains by invoking the the script 
+	 create_afero_whitelist.sh.
+		
+		see: /etc/firewall.user
+
+   - The firewall can be reloaded via the openwrt hotplug.  For example: the command "wifi down" 
+     takes down the wifi interface.  And the "wifi up" brings up the wifi interface "wlan0". The hotplug 
+     mechanism detects the wifi inerface wwlan0 is up, and initiate the firewall reload (which 
+     updates firewall rules).   
+
+	 	see /etc/hotplug.d/iface/20-firewall
+
+
+c) connectivity/pkg/files/etc/config/firewall.bento 
+   - TODO deployment: this file should replace /etc/config/firewall 
+
+
+Below pictures depicts events that triggers the firewall:
+
+	(wifi up)  (reboot) 
+	  |           |
+      |           |
+      |           |
+	  V           V 
+	/etc/config/firewall
+        |
+        | -- call /etc/firewall.user 
+        |
+        | -- call /etc/config/create_afero_whitelist.sh 
+
+
+d) script file: switch_route_to.sh 
+   - this is used by the connmgr to switch route between the interfaces, hence 
+     managing or setup priority of the default route being used. 
+   - in dir: connectivity/pkg/src/connd) 
+   - can be found in dir /usr/bin/switch_route_to.sh on bento 
+
+
+
+
+Testing
+=======
+On a bento console (either through serial or ssh), the following command
+reload the firewall rules:
+
+ > fw3 reload
+
+This reload the firewall rules.
+
+
+Another way to test is to turn the wifi off, and then turn the wifi on again:
+ > wifi off
+ > wifi on
