@@ -533,6 +533,11 @@ static int prv_set_event(wifistad_event_t event, void *param, struct timeval *ti
 		AFLOG_ERR("prv_set_event:malloc failed");
 		return -1;
 	}
+	if (timeout == NULL) {
+		AFLOG_ERR("prv_set_event: timeout invalid");
+		return (-1);
+	}
+	AFLOG_INFO("prv_set_event:: event timeout: %ld.%06ld ", timeout->tv_sec, timeout->tv_usec);
 
 	TRACK_CONN_TIMER(event);
 
@@ -577,9 +582,6 @@ static void prv_handle_connecting_tmout (wpa_manager_t *m)
 		wpa_manager_connect_async(NULL, NULL, prev_network_id);
 	}
 	else {
-		uint8_t tmout_secs = (s_conn_timer_set) ? 20 : WIFISTAT_CONN_TMOUT_VAL;
-
-		sleep(tmout_secs);  // wait miminum 10 secs, and check for retry.
 		wifista_wpa_post_event(WPA_EVENT_ID_CFG_CHECK, NULL);
 	}
 	return;
@@ -746,7 +748,6 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			}
 
 
-			sleep (3); // allow time for the system to setup
 			echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
 			if (echo_succ == 1) {
 				wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
@@ -835,7 +836,6 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				s_wpa_state = WPA_STATE_READY;
 
 				// give the wpa supplicant time to get ready
-				sleep(5);
 				wpa_manager_status_async(NULL, NULL);
 #if 0
 // HOSTAPD not support now
