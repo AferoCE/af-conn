@@ -1,6 +1,4 @@
-/*
- * connmgr_attributes.c
- *
+ /*
  * This contains the definitions and data structures used for managing
  * the callback functions use in the communication with attrd, as well
  * the set, get attribute functionality.
@@ -19,17 +17,75 @@
 #include <sys/wait.h>
 #include <stddef.h>
 #include <event.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "af_rpc.h"
+#include "af_util.h"
+#include "af_log.h"
+
 #include "connmgr.h"
 #include "connmgr_attributes.h"
+#include "connmgr_stats.h"
 
-#include "af_log.h"
+#define NET_CAPABILITY_FILE  "/usr/bin/afero_net_cap"
+
+
+// Macros
+//
+#define INPUT_FILE_DETAIL(root,x) root #x
+
+#define IS_OPERSTATE_UP(ops)                    \
+    (strncasecmp(ops, "up", 2) == 0) ? 1 : 0    \
+
+#define IS_OPERSTATE_DOWN(ops)                  \
+    (strncasecmp(ops, "down", 4) == 0) ? 1 : 0  \
+
+#define IS_OPERSTATE_DORMANT(ops)                  \
+    (strncasecmp(ops, "dormant", 7) == 0) ? 1 : 0  \
+
+// the MAC address length
+#ifndef MAC_ADDR_LEN
+    #define MAC_ADDR_LEN    6
+#endif
+
 
 extern struct event_base  *connmgr_evbase;
 
 extern uint32_t connmgr_conn_to_attrd(struct event_base *ev_base);
 extern void connmgr_shutdown();
+
+#define SYSFS_HW_ADDR_PATH  "/sys/class/net/%s/address"
+static int8_t  get_hwaddr(const char *dev, uint8_t *hw, size_t n)
+{
+	char     buf[64];
+	char     fname[80];
+	uint32_t bytes[6], i;
+
+    if ((dev == NULL) || (n < MAC_ADDR_LEN)) {
+        AFLOG_ERR("af_util_get_hwaddr:: invalid input");
+        return (-1);
+    }
+
+	memset(bytes, 0, sizeof(bytes));
+	memset(fname, 0, sizeof(fname));
+    sprintf(fname, SYSFS_HW_ADDR_PATH, dev);
+	if (af_util_read_file(fname, &buf[0], sizeof(buf)) > 0) {
+        sscanf(buf, "%x:%x:%x:%x:%x:%x",
+				&bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4], &bytes[5]);
+
+		/* convert to uint8_t */
+		for( i = 0; i < 6; ++i )
+			hw[i] = (uint8_t) bytes[i];
+
+        //af_log_buffer(LOG_DEBUG1, "READ_BUF", &buf[0], sizeof(buf));
+        //af_log_buffer(LOG_DEBUG1, "HW_ADDRD", hw, 6);
+
+        return (0);
+    }
+    return (-1);
+}
 
 
 /* cm_get_network_type
@@ -124,9 +180,24 @@ int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, 
 				level = LOG_DEBUG_OFF;
 			}
 			g_debugLevel = level;
-			AFLOG_INFO("connmgr_attr_on_owner_set:i debug_level=%d", level);
+			AFLOG_INFO("connmgr_attr_on_owner_set:: debug_level=%d", level);
 			break;
 		}
+
+		case AF_ATTR_CONNMGR_ETH_CONTROL:
+			{
+				uint8_t  ctrl = *value;
+
+				if (ctrl & 0x01) {  // bit 1 is on
+					AFLOG_INFO("connmgr_attr_on_owner_set:: enable WIFI");
+					af_util_system("ifconfig " CONNMGR_ETH_IFNAME " up");
+				}
+				else {
+					AFLOG_INFO("connmgr_attr_on_owner_set:: disable WIFI");
+					af_util_system("ifconfig " CONNMGR_ETH_IFNAME " down");
+				}
+			}
+			break;
 
 		default:
 			AFLOG_ERR("connmgr_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
@@ -156,11 +227,13 @@ void connmgr_attr_on_set_finished(int status, uint32_t attributeId, void *contex
 // another client has requested an attribute this client owns
 void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *context)
 {
-	int8_t			value;
+	int8_t			value = 0;
+	char            buf[64];
 
 
 	AFLOG_INFO("connmgr_attr_on_get_request:: get request for attribute=%d", attributeId);
 
+	memset (buf, 0, sizeof(buf));
 	switch (attributeId) {
 		case AF_ATTR_CONNMGR_NETWORK_TYPE:
 			value = cm_get_network_type();
@@ -172,6 +245,176 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
             AFLOG_INFO("connmgr_attr_on_get_request: debug_level=%d", value);
             af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
             break;
+
+
+		case AF_ATTR_CONNMGR_ETH_ITF_STATE:
+		case AF_ATTR_CONNMGR_WIFI_ITF_STATE: {
+				/* 0 - Not Available/Broken
+				* 1 - Disabled
+				* 2 - Pending
+				* 3 - Up
+				*/
+				char  filename[64];
+				char  *itf=((attributeId == AF_ATTR_CONNMGR_WIFI_ITF_STATE) ? CONNMGR_WLAN_IFNAME : CONNMGR_ETH_IFNAME);
+
+				memset (filename, 0, sizeof(filename));
+				sprintf(filename, "/sys/class/net/%s/operstate", itf);
+				AFLOG_INFO("connmgr_attr_on_get_request:: filename=%s", filename);
+				if (af_util_read_file(filename, buf, sizeof(buf)) > 0) {
+					if (IS_OPERSTATE_DOWN(buf)) {
+						value = 1; // disabled
+					}
+					else if (IS_OPERSTATE_UP(buf) == 1) {
+						value = 3; // up
+					}
+					else if (IS_OPERSTATE_DORMANT(buf) == 1) {
+						value = 2; // dormant
+					}
+				}
+				AFLOG_INFO("connmgr_attr_on_get_request:: interface state=0x%02x", value);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+            }
+			break;
+
+		case AF_ATTR_CONNMGR_NET_CAPABILITIES: {
+				if (af_util_file_exists(NET_CAPABILITY_FILE) == 1) {
+					int rc;
+					rc = af_util_system(NET_CAPABILITY_FILE);
+					if (rc >= 0) {
+						value = (uint8_t) rc;
+					}
+				}
+				else {
+					AFLOG_ERR("connmgr_attr_on_get_request:: no NET CAPABILITY file");
+				}
+
+				AFLOG_INFO("NET_CAPABILITIES=0x%02x", value);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_WIFI_UPTIME:
+		case AF_ATTR_CONNMGR_ETH_UPTIME:
+		case AF_ATTR_CONNMGR_WAN_UPTIME: {
+				cm_conn_monitor_cb_t *tmp_p = wlan_mon_p;
+				time_t    end_time;
+				double    diff = 0;
+				uint32_t  uptime = 0;
+
+				if (attributeId == AF_ATTR_CONNMGR_ETH_UPTIME) {
+					tmp_p = eth_mon_p;
+				} else if (attributeId == AF_ATTR_CONNMGR_WAN_UPTIME) {
+					tmp_p = wan_mon_p;
+				}
+
+				if ((tmp_p) && (tmp_p->conn_active)) {
+					time(&end_time);
+					diff = difftime(end_time, tmp_p->start_uptime);
+				}
+				uptime = (uint32_t) diff;
+
+				AFLOG_INFO("connmgr_attr_on_get_request:: %s  uptime=%d", ((tmp_p==NULL) ? "--":tmp_p->dev_name), uptime);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&uptime, sizeof(uptime));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_ETH_CONTROL: {
+				// ifconfig eth0 down
+				// /sys/class/net/eth0/operstate = down
+				// /sys/class/net/eth0/flags = 0x1002
+				//
+				// ifconfig eth0 up
+				// /sys/class/net/eth0/flags= 0x1003 (unplugged, or plugged)
+				// /sys/class/net/eth0/operstate = up
+
+				if (af_util_read_file(INPUT_FILE_DETAIL("/sys/class/net/" CONNMGR_ETH_IFNAME, "/operstate"), buf, sizeof(buf)) == 1) {
+					value = IS_OPERSTATE_UP(buf);
+				}
+				AFLOG_INFO("ETH_CONTROL = 0x%02x", value);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_WIFI_MAC_ADDR:
+		case AF_ATTR_CONNMGR_ETH_MAC_ADDR: {
+				uint8_t  mac[MAC_ADDR_LEN];
+				memset(&mac[0], 0, sizeof(mac));
+				if (attributeId == AF_ATTR_CONNMGR_WIFI_MAC_ADDR) {
+					get_hwaddr(CONNMGR_WLAN_IFNAME, &mac[0], sizeof(mac));
+				}
+				if (attributeId == AF_ATTR_CONNMGR_ETH_MAC_ADDR) {
+					get_hwaddr(CONNMGR_ETH_IFNAME, &mac[0], sizeof(mac));
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&mac[0], sizeof(mac));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_WIFI_IPADDR: {
+				struct in_addr  addr;
+				memset(&addr, 0, sizeof(addr));
+				if (wlan_mon_p) {
+					inet_aton(wlan_mon_p->ipaddr, &addr);
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_ETH_IPADDR: {
+				struct in_addr  addr;
+				memset(&addr, 0, sizeof(addr));
+				if (eth_mon_p) {
+					inet_aton(eth_mon_p->ipaddr, &addr);
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
+			}
+			break;
+
+        case AF_ATTR_CONNMGR_WAN_IPADDR: {
+                struct in_addr  addr;
+                memset(&addr, 0, sizeof(addr));
+                if (wan_mon_p) {
+                    inet_aton(wan_mon_p->ipaddr, &addr);
+                }
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
+            }
+            break;
+
+
+		case AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE:    // transmit bytes
+		case AF_ATTR_CONNMGR_WIFI_DL_DATA_USAGE: {  // receive bytes
+				uint32_t   data = 0;
+				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WLAN_IDX);
+				if (tmp_p) {
+					data = ((attributeId == AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE) ?
+								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE:
+		case AF_ATTR_CONNMGR_WAN_DL_DATA_USAGE: {
+				uint32_t   data = 0;
+				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WAN_IDX);
+				if (tmp_p) {
+					data = ((attributeId == AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE) ?
+								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+			}
+			break;
+
+		case AF_ATTR_CONNMGR_ETH_DL_DATA_USAGE:
+		case AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE: {
+				uint32_t   data = 0;
+				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_ETH_IDX);
+				if (tmp_p) {
+					data = ((attributeId == AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE) ?
+								tmp_p->traffic_stats.tx_bytes : tmp_p->traffic_stats.rx_bytes);
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+			}
+			break;
 
 		default:
 			af_attr_send_get_response(AF_ATTR_STATUS_ATTR_ID_NOT_FOUND, getId, (uint8_t *)"", 0);
@@ -243,3 +486,4 @@ void connmgr_attr_on_close(int status, void *context)
                         (void *)connmgr_evbase, &attr_tmout);
     }
 }
+

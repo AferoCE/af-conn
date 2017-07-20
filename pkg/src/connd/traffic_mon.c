@@ -204,6 +204,8 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
     /* interface is up with IP addr assigned, we don't know service is up */
     conn_mon_p->idle_count = 0;
     conn_mon_p->conn_active = 1;
+    time(&(conn_mon_p->start_uptime));
+
     if (conn_mon_p->my_idx == CM_MONITORED_BR_IDX) {
         conn_mon_p->dev_link_status = NETCONN_STATUS_ITFNOTSUPP_SX;
     }
@@ -877,6 +879,7 @@ void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
 {
     net_conn_p->conn_active = 1;
     net_conn_p->dev_link_status = new_status;
+    time(&(net_conn_p->start_uptime));
 
 
     // restart the idle_count every time when we detect the itf is UP.

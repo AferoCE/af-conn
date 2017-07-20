@@ -112,6 +112,8 @@ typedef struct cm_conn_monitor_struct  {
 
     uint32_t        idle_count;         // idle count
     uint8_t         conn_active;        // this network is currently being monitored
+    time_t          start_uptime;       // start time when the interface is up
+                                        // iff conn_active = 1
 
     int32_t         pcap_fd;            // connection pcap file descriptor
     pcap_t          *pcap_handle;
@@ -161,6 +163,7 @@ extern
 cm_conn_monitor_cb_t cm_monitored_net[CONNMGR_NUM_MONITORED_ITF];
 
 extern cm_conn_monitor_cb_t *eth_mon_p;
+extern cm_conn_monitor_cb_t *wan_mon_p;
 extern cm_conn_monitor_cb_t *wlan_mon_p;
 extern cm_conn_monitor_cb_t *bridge_mon_p;
 

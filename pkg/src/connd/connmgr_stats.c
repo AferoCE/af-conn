@@ -229,15 +229,15 @@ connmgr_log_stats(const char *dev_name, uint8_t idx)
         AFLOG_DEBUG1("    inuse_count: %d", cm_stats_db[idx].usage_stats.inuse_count);
 
         /* Convert to local time format. */
-		memset(tm_buf, 0, sizeof(tm_buf));
-		ctime_r(&cm_stats_db[idx].usage_stats.inuse_start_tm, tm_buf);
+        memset(tm_buf, 0, sizeof(tm_buf));
+        ctime_r(&cm_stats_db[idx].usage_stats.inuse_start_tm, tm_buf);
         AFLOG_DEBUG1("    inuse_start_tm: %s",
-                     ( (cm_stats_db[idx].usage_stats.inuse_start_tm == 0) ? 
+                     ( (cm_stats_db[idx].usage_stats.inuse_start_tm == 0) ?
                         "--" : tm_buf));
-		memset(tm_buf, 0, sizeof(tm_buf));
-		ctime_r(&cm_stats_db[idx].usage_stats.inuse_end_tm, tm_buf);
+        memset(tm_buf, 0, sizeof(tm_buf));
+        ctime_r(&cm_stats_db[idx].usage_stats.inuse_end_tm, tm_buf);
         AFLOG_DEBUG1("    inuse_end_tm  : %s",
-                     ((cm_stats_db[idx].usage_stats.inuse_end_tm == 0) ? 
+                     ((cm_stats_db[idx].usage_stats.inuse_end_tm == 0) ?
                         "--" : tm_buf ));
 
         /* refresh the traffic stats before printing it out */
@@ -254,6 +254,31 @@ connmgr_log_stats(const char *dev_name, uint8_t idx)
                      cm_stats_db[idx].traffic_stats.tx_packets,
                      cm_stats_db[idx].traffic_stats.tx_drops,
                      cm_stats_db[idx].traffic_stats.tx_errs);
-    }    
+    }
     return;
+}
+
+
+/*
+* connmgr_get_data_usage_cb
+*
+* given an interface index, returns the stats cb pointer.
+*/
+cm_stats_t *connmgr_get_data_usage_cb(uint8_t  idx)
+{
+    if (idx == CONNMGR_MONITORED_ITF_ETH) {
+        connmgr_get_ifstats(CONNMGR_ETH_IFNAME, idx);
+        return (&cm_stats_db[idx]);
+    }
+    else if (idx == CONNMGR_MONITORED_ITF_WLAN) {
+        connmgr_get_ifstats(CONNMGR_WLAN_IFNAME, idx);
+        return (&cm_stats_db[idx]);
+    }
+    else if (idx == CONNMGR_MONITORED_ITF_WAN) {
+        connmgr_get_ifstats(CONNMGR_WAN_IFNAME, idx);
+        return (&cm_stats_db[idx]);
+    }
+    else {
+        return NULL;
+    }
 }

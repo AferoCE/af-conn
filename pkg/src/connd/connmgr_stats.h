@@ -66,5 +66,6 @@ extern void connmgr_usage_stats_update_end_tm(uint8_t idx);
 
 /* to logs the stats per interface*/
 extern void connmgr_log_stats (const char *dev_name, uint8_t idx);
+extern cm_stats_t *connmgr_get_data_usage_cb(uint8_t  idx);
 
 #endif //CONND_CONNMGR_STATS_H
