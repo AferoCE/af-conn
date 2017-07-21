@@ -19,11 +19,11 @@
 
 
 // Looking for AFERO AP
-#define AFERO_MASTER_SSID 			"_afero_"    // TODO - temp for now
-#define AFERO_MASTER_PW				"4ce1aac59993fa076ba1bc395aec7a57"
+#define AFERO_MASTER_SSID       "_afero_"    // TODO - temp for now
+#define AFERO_MASTER_PW         "4ce1aac59993fa076ba1bc395aec7a57"
 
 
-#define WIFISTA_MAX_APS                 100
+#define WIFISTA_MAX_APS         100
 
 // from wifistad.c
 typedef enum {
@@ -41,7 +41,7 @@ extern const char *WPA_STATE_STR[WPA_STATE_MAX];
 // - This is used to cache the AP list
 typedef struct {
     char         bssid[WIFISTA_BSSID_LEN];
-    char  		 ssid[HUB_SSID_LEN + 1];
+    char         ssid[HUB_SSID_LEN + 1];
     int32_t      rssi;
     uint8_t      support_security;  // use security: wpa, psk?
     uint8_t      connected_to_it;   // bento currently connect to this ssid?
@@ -58,15 +58,15 @@ extern wifista_ap_list_t  cached_ap_list;
 typedef struct {
     uint8_t prev_provisioned;
     char    *bssid;    // valid if previous previsioned
-    char  	ssid[HUB_SSID_LEN + 1];
+    char    ssid[HUB_SSID_LEN + 1];
     char    key[HUB_WIFI_CRED_LEN + 1];
 } wifi_cred_t;
 
 
-#define  AFERO_WIFI_FILE        "/data/.afero_wifi.txt"
+#define  AFERO_WIFI_FILE        "/afero_nv/.afero_wifi.txt"
 
 // Wifi setup APIs
-extern int8_t   wifista_read_wifi_cred(wifi_cred_t  *cred_p);
+extern int8_t wifista_read_wifi_cred(wifi_cred_t  *cred_p);
 extern void wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p);
 extern void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result_p);
 extern void wifista_save_wifi_cred(wifi_cred_t   *cred_p);
