@@ -25,6 +25,7 @@
 #include "wifistad.h"
 #include "wpa_manager.h"
 #include "af_log.h"
+#include "af_util.h"
 
 
 // timeout value for report to
@@ -211,6 +212,74 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&level, sizeof(int8_t));
 			}
             break;
+
+		case AF_ATTR_WIFISTAD_WIFI_KEY_MGMT: {
+			/* 0 - None
+			*  1 - WPA PSK
+			*  2 - WPA-EAP
+			*  3 - IEEE 802.1X
+			*/
+				uint8_t  value = 0;
+				if (strstr(m->assoc_info.key_mgmt, "PSK") != NULL) {
+					value = 1;
+				}
+				else if (strstr(m->assoc_info.key_mgmt, "NONE") != NULL) {
+					value = 0;
+				}
+				else if (strstr(m->assoc_info.key_mgmt, "EAP") != NULL) {
+					value = 2;
+				}
+				else if (strstr(m->assoc_info.key_mgmt, "IEEE8021X") != NULL) {
+					value = 3;
+				}
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			}
+			break;
+
+		case AF_ATTR_WIFISTAD_WIFI_PAIRWISE_CIPHER:
+		case AF_ATTR_WIFISTAD_WIFI_GROUP_CIPHER: {
+			/* - Group (multicast and broadcast) cipher. Supported so far:
+			 *    or
+			 * - Pairwise (unicast) cipher. Supported so far:
+			 * 0 - None
+			 * 1 - WEP 40 bit
+			 * 2 - WEP 104 bit
+			 * 3 - TKIP
+			 * 4 - AES CCMP
+			 */
+				uint8_t  value = 0;
+				char  *cipher_p = (attributeId == AF_ATTR_WIFISTAD_WIFI_GROUP_CIPHER) ?
+								m->assoc_info.group_cipher : m->assoc_info.pairwise_cipher;
+
+				if (strstr(cipher_p, "CCMP") != NULL) {
+					value = 4;
+				}
+				else if (strstr(cipher_p, "TKIP") != NULL) {
+					value = 3;
+				}
+				else if (strstr(cipher_p, "WEP104") != NULL) {
+					value = 2;
+				}
+				else if (strstr(cipher_p, "WEP40") != NULL) {
+					value = 1;
+				}
+				else if (strstr(cipher_p, "NONE") != NULL) {
+					value = 0;
+				}
+				AFLOG_INFO("wifistad_attr_on_get_request: attributeId=%d,  cipher=%d", attributeId, value);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			}
+			break;
+
+		case AF_ATTR_WIFISTAD_WIFI_HIDDEN_SSID: {
+				/*  Flag indicating whether the SSID is broadcast or not.
+				 * 0 - SSID is broadcast
+				 * 1 - SSID is hidden
+				 */
+				uint8_t  value = 0;
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			}
+			break;
 
 		default:
 			af_attr_send_get_response(AF_ATTR_STATUS_ATTR_ID_NOT_FOUND, getId, (uint8_t *)"", 0);
