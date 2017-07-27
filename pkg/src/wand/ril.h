@@ -30,6 +30,43 @@ typedef enum {
 #define RIL_ERR_NONFATAL    -1
 #define RIL_ERR_FATAL       -2
 
+enum {
+    RIL_SIM_STATUS_ABSENT = 0,
+    RIL_SIM_STATUS_PRESENT,
+    RIL_SIM_STATUS_ERROR,
+    RIL_SIM_STATUS_UNKNOWN
+};
+
+enum {
+    RIL_PS_STATE_DETACHED = 0,
+    RIL_PS_STATE_ATTACHED,
+    RIL_PS_STATE_UNKNOWN
+};
+
+enum {
+    RIL_REG_STATE_NOT_REGISTERED = 0,
+    RIL_REG_STATE_REGISTERED,
+    RIL_REG_STATE_SEARCHING,
+    RIL_REG_STATE_DENIED,
+    RIL_REG_STATE_UNKNOWN
+};
+
+enum {
+    RIL_ROAMING_STATE_HOME = 0,
+    RIL_ROAMING_STATE_ROAMING,
+    RIL_ROAMING_STATE_UNKNOWN
+};
+
+enum {
+    RIL_RAT_UNKNOWN = 0,
+    RIL_RAT_GSM,
+    RIL_RAT_EGPRS,
+    RIL_RAT_CDMA1X,
+    RIL_RAT_UMTS,
+    RIL_RAT_EVDO,
+    RIL_RAT_LTE
+};
+
 #define PDN_AUTH_TYPE_LEN_MAX 1
 #define PDN_PROTOCOL_LEN_MAX 6
 #define PDN_APN_LEN_MAX 100
@@ -63,15 +100,38 @@ typedef void (*ril_event_callback_t)(ril_event_t event, void *context);
 int ril_init(struct event_base *base, ril_event_callback_t callback, void *context);
 int ril_select_network(ril_data_call_request_t *dataCallReq);
 
+typedef struct {
+    char imeisv[20];
+    char iccid[24];
+    char imsi[16];
+    uint8_t simStatus;
+    uint8_t psState;
+    uint8_t regState;
+    uint8_t rat;
+    uint8_t bars;
+    uint8_t roamingState;
+    uint8_t rac;
+    uint8_t pad1;
+    uint16_t tac;
+    uint16_t pcid;
+    int16_t rsrp;
+    int16_t rsrqX10;
+    int16_t rssnrX10;
+    uint16_t pad2;
+    char mcc[4];
+    char mnc[4];
+    uint32_t lac;
+    char plmn[32];
+    char apn[100];
+    char neighborInfo[128];
+} ril_wan_status_t;
+
 char *ril_get_iccid(void);
-char *ril_get_sim_status(void);
 
-int ril_get_ps_attach(int *attachedP);
+ril_wan_status_t *ril_lock_wan_status(void);
+void ril_unlock_wan_status(void);
 
-char *ril_get_camp_status(void);
-char *ril_get_serving_status(void);
-char *ril_get_neighbor_status(void);
-uint8_t ril_get_bars(void);
+int ril_get_ps_attach(void);
 
 /* These functions block and return 0 if they succeed */
 int ril_activate_data_call(ril_data_call_response_t *dataCallRsp);

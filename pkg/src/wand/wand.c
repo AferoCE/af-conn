@@ -270,7 +270,7 @@ static void prv_activate_data_call(void)
 
     while (tries < WAND_ACTIVATE_DATA_CALL_TRIES) {
         int attach;
-        if (ril_get_ps_attach(&attach) < 0) {
+        if ((attach = ril_get_ps_attach()) < 0) {
             goto modem_down;
         }
         if (!attach) {
@@ -441,9 +441,15 @@ static int prv_modem_on(void)
         sRilStarted = 1;
 
         if (!sDataCallReqSetUp) {
+            char iccid[24];
+
+            /* get the iccid. This is pedantic and overkill */
+            ril_wan_status_t *wStatus = ril_lock_wan_status();
+            memcpy(iccid, wStatus->iccid, sizeof(wStatus->iccid));
+            ril_unlock_wan_status();
 
             /* get the proper APN for the modem */
-            if (prv_get_apn_info(ril_get_iccid(), &sDataCallReq) < 0) {
+            if (prv_get_apn_info(iccid, &sDataCallReq) < 0) {
                 AFLOG_ERR("modem_on_get_apn_info:errno=%d", errno);
                 prv_modem_power(WANCONTROL_OFF);
                 /* TODO this should be fatal */
@@ -491,13 +497,14 @@ static int prv_modem_off(void)
 
 #define CHECK_IN_COUNT_INTERVAL 360 // One hour for a ten second interval
 
+static int sAttached = 0;
+static int sCheckInCount = 0;
+
 static int prv_check_signal(void)
 {
-    static int sAttached;
-    static int sCheckInCount = 0;
 
-    int attached;
-    if (ril_get_ps_attach(&attached) < 0) {
+    int attached = ril_get_ps_attach();
+    if (attached < 0) {
         prv_handle_wand_event(WAND_EVENT_MODEM_LOCKED);
         return -1;
     }
@@ -586,11 +593,6 @@ static void *prv_worker_loop(void *arg)
             AFLOG_DEBUG3("prv_worker_loop:checking signal");
             prv_check_signal();
         }
-
-        /* periodically report is on, send signal strength info */
-        if (GET_PERIODIC_RPT_RSSI()) {
-           wan_rpt_rssi_info();
-        }
     }
     return NULL;
 }
@@ -639,9 +641,11 @@ static void prv_handle_wand_event(wand_event_t wandEvent) {
                     break;
                 case WAND_EVENT_NO_MODEM :
                     sWandState = WAND_STATE_OFF;
+#if 0
                     if (sWanVariant) {
                         notify_wan_existence();
                     }
+#endif
                     break;
                 default :
                     AFLOG_ERR("w_event:event=%s,state=%s:unhandled wan event", s_wand_event_names[wandEvent], s_wand_state_names[oldState]);
@@ -897,4 +901,26 @@ int main()
 struct event_base *wand_get_evbase()
 {
     return (sWandBase);
+}
+
+char *wan_apn(void)
+{
+    return sDataCallReq.apn;
+}
+
+uint8_t wan_interface_state(void)
+{
+    switch(sWandState) {
+        case WAND_STATE_OFF :
+            return WAN_ITF_STATE_NOT_AVAILABLE;
+        case WAND_STATE_WAITING_FOR_DOWN :
+        case WAND_STATE_WAITING_FOR_UP :
+        case WAND_STATE_WAITING_FOR_DATA :
+            return WAN_ITF_STATE_PENDING;
+        case WAND_STATE_DATA :
+            return WAN_ITF_STATE_UP;
+        default :
+            break;
+    }
+    return WAN_ITF_STATE_NOT_AVAILABLE;
 }

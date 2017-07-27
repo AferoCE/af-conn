@@ -18,6 +18,8 @@
 typedef enum {
     AT_RESULT_SUCCESS = 0,
     AT_RESULT_ERROR,
+    AT_RESULT_CME_ERROR,
+    AT_RESULT_CMS_ERROR,
     AT_RESULT_TIMEDOUT,
     AT_RESULT_PENDING,
     AT_RESULT_SEND_FAILED,
@@ -46,6 +48,7 @@ at_result_t at_send_cmd_1_int(at_response_type_t type, char *prefix, int arg, in
 at_result_t at_send_cmd_2_int(at_response_type_t type, char *prefix, int arg1, int arg2, int timeout);
 at_result_t at_send_query(at_response_type_t type, char *prefix, int timeout);
 
+int at_rsp_error(void);
 int at_rsp_num_lines(void);
 char *at_rsp_next_line(void);
 int at_tokenize_line(char *line, char tok, char **list, int len);

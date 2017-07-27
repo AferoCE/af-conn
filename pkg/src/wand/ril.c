@@ -17,6 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 
 #include <event2/event.h>
 
@@ -81,9 +82,6 @@ typedef enum {
     PDN_PROTOCOL_INVALID
 } pdn_protocol;
 
-#define AT_CMD_UNLOCK_PROFILE          "+HBHV"
-#define AT_CMD_SET_PHONE_FUNCTIONALITY "+CFUN"
-#define AT_CMD_MANUFACTURER_ID         "+CGMI"
 #define AT_CMD_ECHO                    "E"
 #define AT_CMD_PS_EVENT_REPORT         "+CGEREP"
 #define AT_CMD_PS_STATUS_LTE           "+CEREG"
@@ -97,7 +95,6 @@ typedef enum {
 #define AT_CMD_SET_ERROR_REPORT        "+CMEE"
 #define AT_CMD_NETWORK_SELECTION       "+COPS"
 #define AT_CMD_PS_ATTACH               "+CGATT"
-#define AT_CMD_SIGNAL_QUALITY          "+XCESQ"
 #define AT_CMD_ICCID                   "+CCID"
 #define AT_CMD_IMEISV                  "+KGSN"
 #define AT_CMD_IMSI                    "+CIMI"
@@ -106,6 +103,7 @@ typedef enum {
 
 #define AT_UNSOL_PS_EVENT              "+CGEV"
 #define AT_UNSOL_REGISTRATION_EVENT    "+CEREG"
+#define AT_UNSOL_SIGNAL_QUALITY        "+XCESQI"
 
 typedef struct {
     int cid;
@@ -134,19 +132,24 @@ static data_connection_t sConnection;
 static ril_event_callback_t sRilEventCallback = NULL;
 static void *sRilEventContext;
 static struct event_base *sEventBase;
+static ril_wan_status_t sWanStatus = {
+    .rsrp = -999,
+    .psState = RIL_PS_STATE_UNKNOWN,
+    .regState = RIL_REG_STATE_UNKNOWN,
+    .roamingState = RIL_ROAMING_STATE_UNKNOWN,
+    .simStatus = RIL_SIM_STATUS_UNKNOWN,
+    .rat = RIL_RAT_UNKNOWN
+};
+
+static pthread_mutex_t sWanStatusMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static apn_profile_t * prv_prepare_apn_profile(ril_data_call_request_t *req);
 
 static int sConnectionId = -1;
 
-#define POWER_OFF_STATUS "PWR=0"
-
-static char sIccid[32] = "";
-static char sSimStatus[128] = POWER_OFF_STATUS;
-static char sCampStatus[128] = "";
-static char sServingStatus[128] = "";
+#if 0
 static char sNeighborStatus[256] = "";
-static int sBars = 0; // 0-5 0 == not camped
+#endif
 
 #define EV(_x) #_x
 
@@ -162,15 +165,15 @@ static void prv_ril_send_event(ril_event_t event)
     }
 }
 
-
 static void prv_on_ps_event(char *rest, void *context)
 {
     char *token[5];
     int num_tokens;
 
+    AFLOG_DEBUG3("on_cgev:rest=\"%s\"", rest);
     num_tokens = at_tokenize_line(rest, ' ', token, ARRAY_SIZE(token));
 
-    /* TODO sConnection not protected! */
+    /* sConnection is not protected. We assume int is atomic */
     if (num_tokens >= 4) {
         if (!strcmp(token[1],"PDN")) {
             if (!strcmp(token[2],"DEACT")) {
@@ -184,22 +187,167 @@ static void prv_on_ps_event(char *rest, void *context)
     }
 }
 
-static void prv_on_ps_status_lte(char *rest, void *context)
+static void prv_on_registration_event(char *rest, void *context)
 {
-    AFLOG_DEBUG2("on_ps_status_lte rest=\"%s\"", rest);
+    AFLOG_DEBUG3("on_cereg:rest=\"%s\"", rest);
+    char *tokens[4];
+    int nt;
+    if ((nt = at_tokenize_line(rest, ',', tokens, ARRAY_SIZE(tokens))) < 0) {
+        AFLOG_WARNING("prv_on_ps_status_lte_parse:nt=%d:failed to parse tokens", nt);
+    } else {
+        if (nt > 0) {
+            ril_lock_wan_status();
+            int regState = atoi(tokens[0]);
+            switch(regState) {
+                case 0 :
+                    sWanStatus.regState = RIL_REG_STATE_NOT_REGISTERED;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_UNKNOWN;
+                case 1 :
+                    sWanStatus.regState = RIL_REG_STATE_REGISTERED;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_HOME;
+                    break;
+                case 2 :
+                    sWanStatus.regState = RIL_REG_STATE_SEARCHING;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_UNKNOWN;
+                    break;
+                case 3 :
+                    sWanStatus.regState = RIL_REG_STATE_DENIED;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_UNKNOWN;
+                    break;
+                default :
+                    AFLOG_WARNING("prv_on_ps_status_lte_regState:regState=%d", regState);
+                case 4 :
+                    sWanStatus.regState = RIL_REG_STATE_UNKNOWN;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_UNKNOWN;
+                    break;
+                case 5 :
+                    sWanStatus.regState = RIL_REG_STATE_REGISTERED;
+                    sWanStatus.roamingState = RIL_ROAMING_STATE_ROAMING;
+                    break;
+            }
+            ril_unlock_wan_status();
+        }
+    }
 }
 
-void prv_on_registration_event(char *rest, void *context)
+static void prv_on_signal_quality(char *rest, void *context)
 {
-    AFLOG_DEBUG2("on_registration_event rest=\"%s\"", rest);
+    AFLOG_DEBUG3("on_cesq:rest=\"%s\"", rest);
+    char *tokens[7];
+    int nt;
+
+    if ((nt = at_tokenize_line(rest, ',', tokens, ARRAY_SIZE(tokens))) != 7) {
+        AFLOG_WARNING("prv_on_signal_quality_parse:nt=%d:failed to parse tokens", nt);
+    } else {
+        int16_t rsrqX10=-9990, rssnrX10=-9990;
+        int16_t rsrp = -999;
+        uint8_t bars;
+
+        if (tokens[4][0]) {
+            rsrqX10 = strtol(tokens[4], NULL, 10) * 5 - 195;
+        }
+        if (tokens[5][0]) {
+            rsrp = strtol(tokens[5], NULL, 10) - 140;
+        }
+        if (tokens[6][0]) {
+            rssnrX10 = strtol(tokens[6], NULL, 10) * 5;
+        }
+        /* calculate bars based on RSRP */
+        if (rsrp > -85) {
+            bars = 5;
+        } else if (rsrp > -95) {
+            bars = 4;
+        } else if (rsrp > -105) {
+            bars = 3;
+        } else if (rsrp > -115) {
+            bars = 2;
+        } else {
+            bars = 1;
+        }
+
+        ril_lock_wan_status();
+
+        sWanStatus.rsrp = rsrp;
+        sWanStatus.rsrqX10 = rsrqX10;
+        sWanStatus.rssnrX10 = rssnrX10;
+        sWanStatus.bars = bars;
+
+        ril_unlock_wan_status();
+    }
 }
 
-void prv_on_signal_quality(char *rest, void *context)
+static void prv_on_camped_cell_info(char *rest, void *context)
 {
-    AFLOG_DEBUG2("on_signal_quality rest=\"%s\"", rest);
+    int nt;
+    char *tokens[4];
+
+    AFLOG_DEBUG3("on_kccinfo:rest=\"%s\"", rest);
+
+    if ((nt = at_tokenize_line(rest, ',', tokens, ARRAY_SIZE(tokens))) < 0) {
+        AFLOG_WARNING("prv_on_camped_cell_info:parse:cmd=kccinfo,nt=%d:failed to parse tokens", nt);
+    } else {
+        int start = (nt == 3 ? 0 : 1);
+        ril_lock_wan_status();
+        sWanStatus.lac = strtol(tokens[start++], NULL, 16); /* lac in hex */
+        sWanStatus.rac = strtol(tokens[start++], NULL, 16); /* rac */
+        sWanStatus.tac = strtol(tokens[start++], NULL, 16); /* tac */
+        ril_unlock_wan_status();
+    }
 }
 
+/* sWanStatus must be locked when this is called */
+static void prv_set_rat(char act)
+{
+    switch(act) {
+        case '0':
+        case '1':
+            sWanStatus.rat = RIL_RAT_GSM;
+            break;
+        case '2':
+        case '4':
+        case '5':
+        case '6':
+            sWanStatus.rat = RIL_RAT_UMTS;
+            break;
+        case '3':
+            sWanStatus.rat = RIL_RAT_EGPRS;
+            break;
+        case '7':
+            sWanStatus.rat = RIL_RAT_LTE;
+            break;
+        default:
+            break;
+    }
+}
 
+static void prv_on_network_selection(char *rest, void *context)
+{
+    AFLOG_DEBUG3("on_cops:rest=\"%s\"", rest);
+    char *tokens[4];
+    int nt;
+    if ((nt = at_tokenize_line(rest, ',', tokens, ARRAY_SIZE(tokens))) < 0) {
+        AFLOG_WARNING("ril_get_ps_attach:parse:cmd=cops,nt=%d:failed to parse tokens", nt);
+    } else {
+        if (nt > 3) {
+            ril_lock_wan_status();
+            if (isdigit(tokens[2][0])) { /* This is in numeric form */
+                sWanStatus.mcc[0] = tokens[2][0];
+                sWanStatus.mcc[1] = tokens[2][1];
+                sWanStatus.mcc[2] = tokens[2][2];
+                sWanStatus.mcc[3] = '\0';
+                sWanStatus.mnc[0] = tokens[2][3];
+                sWanStatus.mnc[1] = tokens[2][4];
+                sWanStatus.mnc[2] = tokens[2][5]; /* may be '\0' */
+                sWanStatus.mnc[3] = '\0';
+            } else { /* This is the short name form */
+                strncpy(sWanStatus.plmn, tokens[2], sizeof(sWanStatus.plmn));
+                sWanStatus.plmn[sizeof(sWanStatus.plmn) - 1] = '\0';
+            }
+            prv_set_rat(tokens[3][0]);
+            ril_unlock_wan_status();
+        }
+    }
+}
 
 static int prv_update_apn_profile(apn_profile_t *profile, char *apn, char *protocol)
 {
@@ -303,10 +451,20 @@ exit:
     return retVal;
 }
 
-#define SNPRINTF(_buf,_space,_fmt,...) ((_space) > 1 ? snprintf((_buf), (_space), _fmt, ##__VA_ARGS__) : 0)
+ril_wan_status_t *ril_lock_wan_status(void)
+{
+    pthread_mutex_lock(&sWanStatusMutex);
+    return &sWanStatus;
+}
+
+void ril_unlock_wan_status(void)
+{
+    pthread_mutex_unlock(&sWanStatusMutex);
+}
+
+#define CME_ERROR_NO_SIM 10 // returned by the sierra modem when sim is not present
 static int prv_modem_init(void)
 {
-    int pos = 0;
     int retVal = -1;
 
     sConnectionId = -1; /* unset the connection ID */
@@ -318,64 +476,108 @@ static int prv_modem_init(void)
         AFLOG_ERR("prv_modem_init::failed to configure echo");
         goto error;
     }
+
+    /* Report errors numerically */
+    if (at_send_cmd_1_int(AT_RSP_TYPE_OK, AT_CMD_SET_ERROR_REPORT, AT_OPT_ERROR_NUMERIC, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init::failed to configure error report");
+        goto error;
+    }
+
+    /* Register for LTE packet switch status event (CEREG) */
+    if (at_send_cmd_1_int(AT_RSP_TYPE_OK, AT_CMD_PS_STATUS_LTE, AT_OPT_PS_REPORT_ENABLE_ALL, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cereg:failed to configure ps status reporting");
+        goto error;
+    }
+
+    /* Register for packet switch status event (CGEV) for network disconnect event */
+    if (at_send_cmd_2_int(AT_RSP_TYPE_OK, AT_CMD_PS_EVENT_REPORT, AT_OPT_PS_EVENT_REPORT, 0, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cgerep:failed to configure ps event reporting");
+        goto error;
+    }
+
+    /* Register for camped cell info event (KCCINFO) */
+    if (at_send_cmd_1_int(AT_RSP_TYPE_OK, AT_CMD_CAMPED_CELL_INFO, 1, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cmd=kccinfo=1:failed to configure camped cell info reporting");
+        goto error;
+    }
+
+    /* Set network name type to short alphanumeric */
+    if (at_send_cmd_2_int(AT_RSP_TYPE_OK, AT_CMD_NETWORK_SELECTION, 3, 2, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cmd=cops=3,1");
+        goto error;
+    }
+
+    /* Get initial MCC/MNC if it exists (COPS); event handler will pick it up */
+    if (at_send_query(AT_RSP_TYPE_OK, AT_CMD_NETWORK_SELECTION, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init_cops1:cmd=cops?");
+        goto error;
+    }
+
+    /* Get initial value for camped cell info (KCCINFO) */
+    if (at_send_query(AT_RSP_TYPE_OK, AT_CMD_CAMPED_CELL_INFO, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cmd=kccinfo?:failed to get initial camped cell info");
+        goto error;
+    }
+
+    /* Get initial value for network selection (CEREG) */
+    if (at_send_query(AT_RSP_TYPE_OK, AT_CMD_PS_STATUS_LTE, 0) != AT_RESULT_SUCCESS) {
+        AFLOG_ERR("prv_modem_init:cmd=cereg?:failed to get initial network selection");
+        goto error;
+    }
+
     /* Get the IMEI with SV */
-    if (at_send_cmd(AT_RSP_TYPE_PREFIX, AT_CMD_IMEISV, "=2", 0) != AT_RESULT_SUCCESS) {
+    if (at_send_cmd(AT_RSP_TYPE_PREFIX, AT_CMD_IMEISV, "=1", 0) != AT_RESULT_SUCCESS) {
         AFLOG_ERR("prv_modem_init::failed to get IMEI");
         goto error;
     }
-    char *token[2];
+    char *token[1];
     int n = at_tokenize_line(at_rsp_next_line(), ' ', token, ARRAY_SIZE(token));
     if (n != ARRAY_SIZE(token)) {
         AFLOG_ERR("prv_modem_init::failed to parse IMEI+SV");
         return -1;
     }
-
-    /* clear out the entire string so that we can never go off the end of the buffer */
-    memset(sSimStatus, 0, sizeof(sSimStatus));
-
-    pos += SNPRINTF(&sSimStatus[pos], sizeof(sSimStatus) - pos, "PWR=1 IMEI=%s SV=%s", token[0], &token[1][3]);
+    ril_lock_wan_status();
+    strncpy(sWanStatus.imeisv, token[0], sizeof(sWanStatus.imeisv));
+    sWanStatus.imeisv[sizeof(sWanStatus.imeisv) - 1] = '\0';
+    ril_unlock_wan_status();
 
     /* Get the ICCID and detect the SIM */
-    if (at_send_cmd(AT_RSP_TYPE_PREFIX, AT_CMD_ICCID, NULL, 0) != AT_RESULT_SUCCESS) {
-        AFLOG_ERR("prv_modem_init::can't get iccid");
+    int res = at_send_cmd(AT_RSP_TYPE_PREFIX, AT_CMD_ICCID, NULL, 0);
+    if (res == AT_RESULT_SUCCESS) {
+        ril_lock_wan_status();
+        sWanStatus.simStatus = RIL_SIM_STATUS_PRESENT;
+        strncpy(sWanStatus.iccid, at_rsp_next_line(), sizeof(sWanStatus.iccid));
+        sWanStatus.iccid[sizeof(sWanStatus.iccid) - 1] = '\0';
+        ril_unlock_wan_status();
+    } else {
+        ril_lock_wan_status();
+        if (res == AT_RESULT_CME_ERROR && at_rsp_error() == CME_ERROR_NO_SIM) {
+            AFLOG_ERR("prv_modem_init_iccid_no_sim::sim not present");
+            sWanStatus.simStatus = RIL_SIM_STATUS_ABSENT;
+        } else {
+            AFLOG_ERR("prv_modem_init_iccid_sim:res=%d,err=%d", res, at_rsp_error());
+            sWanStatus.simStatus = RIL_SIM_STATUS_ERROR;
+        }
+        ril_unlock_wan_status();
         goto error;
     }
-    strncpy(sIccid, at_rsp_next_line(), sizeof(sIccid));
-    sIccid[sizeof(sIccid) - 1] = '\0';
-    pos += SNPRINTF(&sSimStatus[pos], sizeof(sSimStatus) - pos, " ICCID=%s", sIccid);
 
     /* Get the IMSI */
     if (at_send_cmd(AT_RSP_TYPE_NO_PREFIX, AT_CMD_IMSI, NULL, 0) != AT_RESULT_SUCCESS) {
-        AFLOG_ERR("prv_modem_init::can't get imsi");
+        AFLOG_ERR("prv_modem_init_imsi:err=%d:can't get imsi",at_rsp_error());
         goto error;
     }
-    pos += SNPRINTF(&sSimStatus[pos], sizeof(sSimStatus) - pos, " IMSI=%s", at_rsp_next_line());
-
-    /* Configure event reporting */
-    if (at_send_cmd_1_int(AT_RSP_TYPE_OK, AT_CMD_SET_ERROR_REPORT, AT_OPT_ERROR_NUMERIC, 0)
-            != AT_RESULT_SUCCESS) {
-        AFLOG_ERR("prv_modem_init::failed to configure error report");
-        goto error;
-    }
-
-    if (at_send_cmd_1_int(AT_RSP_TYPE_OK, AT_CMD_PS_STATUS_LTE, AT_OPT_PS_REPORT_ENABLE_ALL, 0)
-            != AT_RESULT_SUCCESS) {
-        AFLOG_ERR("prv_modem_init::failed to configure ps status reporting");
-        goto error;
-    }
-
-    if (at_send_cmd_2_int(AT_RSP_TYPE_OK, AT_CMD_PS_EVENT_REPORT, AT_OPT_PS_EVENT_REPORT, 0, 0)
-            != AT_RESULT_SUCCESS) {
-        AFLOG_ERR("prv_modem_init::failed to configure ps event reporting");
-        goto error;
-    }
+    ril_lock_wan_status();
+    strncpy(sWanStatus.imsi, at_rsp_next_line(), sizeof(sWanStatus.imsi));
+    sWanStatus.imsi[sizeof(sWanStatus.imsi) - 1] = '\0';
+    ril_unlock_wan_status();
 
     if (prv_update_apn_profile_cache() != 0) {
         AFLOG_ERR("prv_modem_init::failed to update apn profile cache");
         goto error;
     }
 
-    retVal = 0;
+    retVal = RIL_ERR_NONE;
 
 error:
     at_end_cmds();
@@ -826,85 +1028,20 @@ exit:
     return retVal;
 }
 
-int ril_get_ps_attach(int *attachedP)
+#define SNPRINTF(_buf,_space,_fmt,...) ((_space) > 1 ? snprintf((_buf), (_space), _fmt, ##__VA_ARGS__) : 0)
+
+int ril_get_ps_attach(void)
 {
     int retVal = RIL_ERR_NONE;
-
-    if (attachedP == NULL) {
-        return RIL_ERR_FATAL;
-    }
+    int psAttach = 0;
 
     at_start_cmds();
 
-    /* clear out the camp status */
-    memset(sCampStatus, 0, sizeof(sCampStatus));
-
-    /* AT+KCCINFO */
-    int result = at_send_query(AT_RSP_TYPE_PREFIX, AT_CMD_CAMPED_CELL_INFO, 0);
-    if (result != AT_RESULT_SUCCESS) {
-        AFLOG_WARNING("ril_get_ps_attach:atfail:cmd=kccinfo:couldn't send command");
-        retVal = RIL_ERR_FATAL;
-        goto exit;
-    }
-
     char *tokens[40];
     int nt;
-    int pos = 0;
-
-    if ((nt = at_tokenize_line(at_rsp_next_line(), ',', tokens, ARRAY_SIZE(tokens))) < 4) {
-        AFLOG_WARNING("ril_get_ps_attach:parse:cmd=kccinfo,nt=%d:failed to parse tokens", nt);
-        retVal = RIL_ERR_NONFATAL;
-        goto exit;
-    } else {
-        pos += SNPRINTF(&sCampStatus[pos], sizeof(sCampStatus) - pos, "CI=%s RAC=%s TAC=%s", tokens[1], tokens[2], tokens[3]);
-    }
-    if (!strcmp(tokens[3], "FFFF")) {
-        sBars = 0; /* not camped */
-    }
-
-    /* AT+XCESQ */
-    result = at_send_query(AT_RSP_TYPE_PREFIX, AT_CMD_SIGNAL_QUALITY, 0);
-    if (result != AT_RESULT_SUCCESS) {
-        AFLOG_WARNING("ril_get_ps_attach:atfail:cmd=cesq:couldn't send command");
-        retVal = RIL_ERR_FATAL;
-        goto exit;
-    }
-
-    if ((nt = at_tokenize_line(at_rsp_next_line(), ',', tokens, ARRAY_SIZE(tokens))) != 8) {
-        AFLOG_WARNING("ril_get_ps_attach:parse:cmd=cesq,nt=%d:failed to parse tokens", nt);
-        retVal = RIL_ERR_NONFATAL;
-        goto exit;
-    }
-    float rsrq=-999.0, rssnr=-999.0;
-    int16_t rsrp = -999;
-
-    if (tokens[5][0]) {
-        rsrq = ((float)strtol(tokens[5], NULL, 10)) / 2.0 - 19.5;
-    }
-    if (tokens[6][0]) {
-        rsrp = strtol(tokens[6], NULL, 10) - 140;
-    }
-    if (tokens[7][0]) {
-        rssnr = ((float)strtol(tokens[7], NULL, 10)) / 2.0;
-    }
-    pos += SNPRINTF(&sCampStatus[pos], sizeof(sCampStatus) - pos, " RSRQ=%.1f RSRP=%d RSSNR=%.1f",
-                    rsrq, rsrp, rssnr);
-
-    /* calculate bars based on RSRP */
-    if (rsrp > -85) {
-        sBars = 5;
-    } else if (rsrp > -95) {
-        sBars = 4;
-    } else if (rsrp > -105) {
-        sBars = 3;
-    } else if (rsrp > -115) {
-        sBars = 2;
-    } else {
-        sBars = 1;
-    }
 
     /* AT+CGATT */
-    result = at_send_query(AT_RSP_TYPE_PREFIX, AT_CMD_PS_ATTACH, 0);
+    int result = at_send_query(AT_RSP_TYPE_PREFIX, AT_CMD_PS_ATTACH, 0);
     if (result != AT_RESULT_SUCCESS) {
         AFLOG_WARNING("ril_get_ps_attach:atfail:cmd=cgatt:couldn't send command");
         retVal = RIL_ERR_FATAL;
@@ -916,19 +1053,20 @@ int ril_get_ps_attach(int *attachedP)
         retVal = RIL_ERR_NONFATAL;
         goto exit;
     }
+
     if (tokens[0][0] == '1') {
-        *attachedP = 1;
+        psAttach = 1;
+        ril_lock_wan_status();
+        sWanStatus.psState = 1;
+        ril_unlock_wan_status();
     } else if (tokens[0][0] == '0') {
-        *attachedP = 0;
+        psAttach = 0;
+        ril_lock_wan_status();
+        sWanStatus.psState = 0;
+        ril_unlock_wan_status();
     } else {
         AFLOG_WARNING("ril_get_ps_attach:attach:attached=%s:bad attach value", tokens[0]);
         retVal = RIL_ERR_NONFATAL;
-        goto exit;
-    }
-
-    if (*attachedP == 0) {
-        /* don't gather serving and neighbor cell info */
-        retVal = RIL_ERR_NONE;
         goto exit;
     }
 
@@ -940,14 +1078,12 @@ int ril_get_ps_attach(int *attachedP)
         goto exit;
     }
 
-    /* clean out the old strings */
-    memset(sServingStatus, 0, sizeof(sServingStatus));
-    memset(sNeighborStatus, 0, sizeof(sNeighborStatus));
+    int pos = 0, nbr_count = 0;
 
     char *line;
     while ((line = at_rsp_next_line()) != NULL) {
         nt = at_tokenize_line(line, ',', tokens, ARRAY_SIZE(tokens));
-        int nf = 0, nbr_count = 0;
+        int nf = 0;
         int nc = atoi(tokens[nf++]);
         if (nc == 0) {
             continue;
@@ -956,73 +1092,60 @@ int ril_get_ps_attach(int *attachedP)
         while (nf < nt) {
             int cell_type = atoi(tokens[nf++]);
             if (cell_type == 5 && nf + 7 <= nt) { /* serving cell; seven fields */
-                pos = 0;
-                pos += SNPRINTF(&sServingStatus[pos], sizeof(sServingStatus) - pos,
-                                "PLMN=%s LTECI=%s PCID=%s TAC=%s RSRP=%s RSRQ=%s TA=%s",
-                                tokens[nf], tokens[nf+1], tokens[nf+2], tokens[nf+3], tokens[nf+4], tokens[nf+5], tokens[nf+6]);
+                ril_lock_wan_status();
+                sWanStatus.mcc[0] = tokens[nf][1];
+                sWanStatus.mcc[1] = tokens[nf][0];
+                sWanStatus.mcc[2] = tokens[nf][3];
+                sWanStatus.mcc[3] = '\0';
+                sWanStatus.mnc[0] = tokens[nf][5];
+                sWanStatus.mnc[1] = tokens[nf][4];
+                sWanStatus.mnc[2] = tokens[nf][2];
+                sWanStatus.mnc[3] = '\0';
+                sWanStatus.pcid = strtol(tokens[nf+2], NULL, 10);
+                ril_unlock_wan_status();
+
                 nf += 7;
             } else if (cell_type == 6 && nf + 4 <= nt) { /* neighbor cell; four fields */
+                ril_lock_wan_status();
                 if (nbr_count == 0) {
-                    pos = 0;
-                    pos += SNPRINTF(&sNeighborStatus[pos], sizeof(sNeighborStatus) - pos,
+                    pos += SNPRINTF(&sWanStatus.neighborInfo[pos], sizeof(sWanStatus.neighborInfo) - pos,
                                 "EARFCN=%s PCID=%s RSRP=%s RSRQ=%s", tokens[nf], tokens[nf+1], tokens[nf+2], tokens[nf+3]);
                 } else {
-                    pos += SNPRINTF(&sNeighborStatus[pos], sizeof(sNeighborStatus) - pos,
+                    pos += SNPRINTF(&sWanStatus.neighborInfo[pos], sizeof(sWanStatus.neighborInfo) - pos,
                                 " EARFCN=%s PCID=%s RSRP=%s RSRQ=%s", tokens[nf], tokens[nf+1], tokens[nf+2], tokens[nf+3]);
                 }
+                ril_unlock_wan_status();
                 nf += 4;
                 nbr_count++;
             }
         }
     }
-    AFLOG_DEBUG3("srv_status=\"%s\"\n", sServingStatus);
-    AFLOG_DEBUG3("nbr_status=\"%s\"\n", sNeighborStatus);
 
 exit:
     at_end_cmds();
 
+    if (retVal == RIL_ERR_NONE) {
+        retVal = psAttach;
+    }
     return retVal;
 }
 
-char *ril_get_sim_status(void)
+static void prv_clear_wan_status(void)
 {
-    return sSimStatus;
-}
-
-char *ril_get_camp_status(void)
-{
-    return sCampStatus;
-}
-
-char *ril_get_serving_status(void)
-{
-    return sServingStatus;
-}
-
-char *ril_get_neighbor_status(void)
-{
-    return sNeighborStatus;
-}
-
-uint8_t ril_get_bars(void)
-{
-    return sBars;
-}
-
-char *ril_get_iccid(void)
-{
-    return sIccid;
+    memset(&sWanStatus, 0, sizeof(sWanStatus));
+    sWanStatus.rsrp = -999;
+    sWanStatus.psState = RIL_PS_STATE_UNKNOWN;
+    sWanStatus.regState = RIL_REG_STATE_UNKNOWN;
+    sWanStatus.roamingState = RIL_ROAMING_STATE_UNKNOWN;
+    sWanStatus.simStatus = RIL_SIM_STATUS_UNKNOWN;
+    sWanStatus.rat = RIL_RAT_UNKNOWN;
 }
 
 void ril_shutdown(void)
 {
     at_shutdown();
 
-    strcpy(sSimStatus, POWER_OFF_STATUS);
-    sCampStatus[0] = '\0';
-    sServingStatus[0] = '\0';
-    sNeighborStatus[0] = '\0';
-    sBars = 0;
+    prv_clear_wan_status();
 
     sEventBase = NULL;
 }
@@ -1034,6 +1157,9 @@ int ril_init(struct event_base *base, ril_event_callback_t callback, void *conte
     sRilEventCallback = callback;
     sRilEventContext = context;
     sEventBase = base;
+
+    /* initialize the WAN status */
+    prv_clear_wan_status();
 
     /* Initialize data connection state */
     memset(&sConnection, 0, sizeof(sConnection));
@@ -1049,9 +1175,10 @@ int ril_init(struct event_base *base, ril_event_callback_t callback, void *conte
 
     at_unsol_def_t defs[] = {
         { AT_UNSOL_PS_EVENT, prv_on_ps_event },
-        { AT_CMD_PS_STATUS_LTE, prv_on_ps_status_lte },
         { AT_UNSOL_REGISTRATION_EVENT, prv_on_registration_event },
-        { AT_CMD_SIGNAL_QUALITY, prv_on_signal_quality }
+        { AT_UNSOL_SIGNAL_QUALITY, prv_on_signal_quality },
+        { AT_CMD_NETWORK_SELECTION, prv_on_network_selection },
+        { AT_CMD_CAMPED_CELL_INFO, prv_on_camped_cell_info }
     };
     at_init("/dev/ttyACM0", base, defs, ARRAY_SIZE(defs), NULL);
 

@@ -12,6 +12,7 @@
 #include <string.h>
 #include <event.h>
 #include <stdlib.h>
+#include <event2/event.h>
 #include "af_log.h"
 #include "server.h"
 #include "af_attr_client.h"
@@ -19,46 +20,60 @@
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
-extern void wand_shutdown(void);
-extern struct event_base *wand_get_evbase();
-extern void wan_attr_on_close(int status, void *context);
+static void wan_attr_on_close(int status, void *context);
 
-// express interested to attribute daemon that we are interested in the
-// notification for the following attributes.
-af_attr_range_t  g_wand_attr_ranges[1] = {
-        {AF_ATTR_ATTRD_REPORT_RSSI_CHANGES, AF_ATTR_ATTRD_REPORT_RSSI_CHANGES},
-};
-#define NUM_WAND_ATTR_RANGES  ARRAY_SIZE(g_wand_attr_ranges)
-#define FIXED_RSRP (-999)
-static uint8_t sRsrp[] = { (65536 + FIXED_RSRP) & 0xff, (65536 + FIXED_RSRP) >> 8 };
+#define RSSI_REPORTING_INTERVAL_SECONDS 5
 
 /* Flag to indicate if we should periodically send signal strengh info*/
-uint8_t  periodic_rpt_rssi = 0;
+static uint8_t sReportRssi = 0;
+static struct event *sTimerEvent = NULL;
 
-
-/* wan_rpt_rssi_info
- *
- * report signal strengh info
- */
-void wan_rpt_rssi_info()
+static void on_report_rssi_timer(evutil_socket_t fd, short what, void *arg)
 {
-    int rc;
+    uint8_t bars;
+    int16_t rsrp;
 
-    uint8_t bars = ril_get_bars();
-    rc = af_attr_set(AF_ATTR_WAN_BARS, (uint8_t *)&bars, sizeof(uint8_t),
-                     NULL, NULL);
+    ril_wan_status_t *wStatus = ril_lock_wan_status();
+    bars = wStatus->bars;
+    rsrp = wStatus->rsrp;
+    ril_unlock_wan_status();
+
+    int rc = af_attr_set(AF_ATTR_WAN_WAN_BARS, &bars, sizeof(uint8_t), NULL, NULL);
     if (rc != AF_ATTR_STATUS_OK) {
         AFLOG_ERR("wifistad_report_rssi_info:rc=%d:set failed", rc);
     }
 
-    rc = af_attr_set(AF_ATTR_WAN_RSRP, sRsrp, sizeof(sRsrp), NULL, NULL);
+    uint8_t rsrpLE[2];
+    af_attr_store_uint16(rsrpLE, rsrp); /* rsrp will be less than 32768 */
+    rc = af_attr_set(AF_ATTR_WAN_WAN_RSRP, rsrpLE, sizeof(rsrpLE), NULL, NULL);
     if (rc != AF_ATTR_STATUS_OK) {
         AFLOG_WARNING("wifistad_report_rssi_info:rc=%d:set failed", rc);
     }
 
-    return;
+    struct timeval tv = { RSSI_REPORTING_INTERVAL_SECONDS, 0 };
+    evtimer_add(sTimerEvent, &tv);
 }
 
+static void set_up_rssi_reporting(int on)
+{
+    uint8_t newValue = (on != 0);
+    if (newValue != sReportRssi) {
+        sReportRssi = newValue;
+        AFLOG_INFO("set_up_rssi_reporting:reportRssi=%d", sReportRssi);
+        if (sReportRssi) {
+            sTimerEvent = evtimer_new(wand_get_evbase(), on_report_rssi_timer, NULL);
+            if (sTimerEvent == NULL) {
+                AFLOG_ERR("set_up_rssi_reporting_timer:errno=%d", errno);
+                return;
+            }
+            struct timeval tv = { RSSI_REPORTING_INTERVAL_SECONDS, 0 };
+            evtimer_add(sTimerEvent, &tv);
+        } else {
+            evtimer_del(sTimerEvent);
+            event_free(sTimerEvent);
+        }
+    }
+}
 
 // on notification
 void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context)
@@ -72,64 +87,81 @@ void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *
     AFLOG_DEBUG2("wan_attr_on_notify:: attributeId=%d value=%s", attributeId, (char *)value);
     switch (attributeId) {
         case AF_ATTR_ATTRD_REPORT_RSSI_CHANGES:
-            {
-                uint8_t  report_rssi_change = *value;
-
-                if (report_rssi_change == 1) {  // activate periodic rssi reporting
-                    periodic_rpt_rssi = 1;
-                }
-                else {  // deactivate periodic rssi reporting
-                    periodic_rpt_rssi = 0;
-                }
-            }
+            set_up_rssi_reporting(value[0]);
             break;
-
 
         default:
             AFLOG_WARNING("wan_attr_on_notify:: unhandled attribute=%d", attributeId);
             break;
     }
-    return;
 }
-
 
 void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
 {
-    char *s;
+    uint8_t buf[4];
 
+    ril_wan_status_t *wStatus = ril_lock_wan_status();
     switch (attrId) {
-        case AF_ATTR_WAN_BARS :
+        case AF_ATTR_WAN_WAN_BARS :
+            af_attr_send_get_response(0, getId, &(wStatus->bars), sizeof(wStatus->bars));
+            break;
+        case AF_ATTR_WAN_WAN_RSRP :
+            af_attr_store_int16(buf, wStatus->rsrp);
+            af_attr_send_get_response(0, getId, buf, sizeof(wStatus->rsrp));
+            break;
+        case AF_ATTR_WAN_WAN_ITF_STATE :
+            buf[0] = wan_interface_state();
+            af_attr_send_get_response(0, getId, buf, sizeof(int8_t));
+            break;
+        case AF_ATTR_WAN_WAN_IMEISV :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->imeisv, strlen(wStatus->imeisv) + 1);
+            break;
+        case AF_ATTR_WAN_WAN_IMSI :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->imsi, strlen(wStatus->imsi) + 1);
+            break;
+        case AF_ATTR_WAN_WAN_ICCID :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->iccid, strlen(wStatus->iccid) + 1);
+            break;
+        case AF_ATTR_WAN_WAN_RAT :
+            af_attr_send_get_response(0, getId, &wStatus->rat, sizeof(wStatus->rat));
+            break;
+        case AF_ATTR_WAN_WAN_REG_STATE :
+            af_attr_send_get_response(0, getId, &wStatus->regState, sizeof(wStatus->regState));
+            break;
+        case AF_ATTR_WAN_WAN_PS_STATE :
+            af_attr_send_get_response(0, getId, &wStatus->psState, sizeof(wStatus->psState));
+            break;
+        case AF_ATTR_WAN_WAN_ROAMING_STATE :
+            af_attr_send_get_response(0, getId, &wStatus->roamingState, sizeof(wStatus->roamingState));
+            break;
+        case AF_ATTR_WAN_WAN_SIM_STATUS :
+            af_attr_send_get_response(0, getId, &wStatus->simStatus, sizeof(wStatus->simStatus));
+            break;
+        case AF_ATTR_WAN_WAN_MCC :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->mcc, sizeof(wStatus->mcc));
+            break;
+        case AF_ATTR_WAN_WAN_MNC :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->mnc, sizeof(wStatus->mnc));
+            break;
+        case AF_ATTR_WAN_WAN_LAC :
+            af_attr_store_uint32(buf, wStatus->lac);
+            af_attr_send_get_response(0, getId, buf, sizeof(wStatus->lac));
+            break;
+        case AF_ATTR_WAN_WAN_CELL_ID :
+            af_attr_store_uint16(buf, wStatus->pcid);
+            af_attr_send_get_response(0, getId, buf, sizeof(wStatus->pcid));
+            break;
+        case AF_ATTR_WAN_WAN_PLMN :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->plmn, strlen(wStatus->plmn) + 1);
+            break;
+        case AF_ATTR_WAN_WAN_APN :
         {
-            uint8_t bars = ril_get_bars();
-            af_attr_send_get_response(0, getId, &bars, sizeof(bars));
+            char tmpApn[PDN_APN_LEN_MAX + 1];
+            strncpy(tmpApn, wan_apn(), sizeof(tmpApn));
+            tmpApn[PDN_APN_LEN_MAX] = '\0';
+            af_attr_send_get_response(0, getId, (uint8_t *)tmpApn, strlen(tmpApn) + 1);
             break;
         }
-        case AF_ATTR_WAN_RSRP :
-            af_attr_send_get_response(0, getId, sRsrp, sizeof(sRsrp));
-            break;
-        case AF_ATTR_WAN_POWER_INFO :
-            s = ril_get_sim_status();
-            af_attr_send_get_response(s ? 0 : AF_ATTR_STATUS_UNSPECIFIED, getId, (uint8_t *)s, (s ? strlen(s) + 1 : 0));
-            break;
-        case AF_ATTR_WAN_CAMP_INFO :
-            s = ril_get_camp_status();
-            af_attr_send_get_response(s ? 0 : AF_ATTR_STATUS_UNSPECIFIED, getId, (uint8_t *)s, (s ? strlen(s) + 1 : 0));
-            break;
-        case AF_ATTR_WAN_SERVING_INFO :
-            s = ril_get_serving_status();
-            af_attr_send_get_response(s ? 0 : AF_ATTR_STATUS_UNSPECIFIED, getId, (uint8_t *)s, (s ? strlen(s) + 1 : 0));
-            break;
-        case AF_ATTR_WAN_NEIGHBOR_INFO :
-            s = ril_get_neighbor_status();
-            af_attr_send_get_response(s ? 0 : AF_ATTR_STATUS_UNSPECIFIED, getId, (uint8_t *)s, (s ? strlen(s) + 1 : 0));
-            break;
-        case AF_ATTR_WAN_AVAILABLE :
-        {
-            uint8_t exists = wan_exists();
-            af_attr_send_get_response(0, getId, &exists, sizeof(exists));
-            break;
-        }
-
         case AF_ATTR_WAN_DEBUG_LEVEL:
         {
             uint8_t value = g_debugLevel;
@@ -137,18 +169,15 @@ void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
             af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(uint8_t));
             break;
         }
-
+        case AF_ATTR_WAN_NEIGHBOR_INFO :
+            af_attr_send_get_response(0, getId, (uint8_t *)wStatus->neighborInfo, strlen(wStatus->neighborInfo) + 1);
+            break;
         default :
+            AFLOG_WARNING("get_attribute_not_found:attr=%d", attrId);
             break;
     }
+    ril_unlock_wan_status();
 }
-
-void notify_wan_existence(void)
-{
-    uint8_t exists = wan_exists();
-    af_attr_set(AF_ATTR_WAN_AVAILABLE, &exists, sizeof(exists), NULL, NULL);
-}
-
 
 int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
 {
@@ -188,8 +217,12 @@ int wan_ipc_init(struct event_base *base)
         return -1;
     }
 
+    af_attr_range_t ranges[] = {
+        {AF_ATTR_ATTRD_REPORT_RSSI_CHANGES, AF_ATTR_ATTRD_REPORT_RSSI_CHANGES}
+    };
+
     int err = af_attr_open(base, "IPC.WAN",
-                           NUM_WAND_ATTR_RANGES, &g_wand_attr_ranges[0],
+                           ARRAY_SIZE(ranges), ranges,
                            wan_attr_on_notify,    // on_notify
                            wan_attr_on_owner_set, // on_set
                            wan_get_request,       // on_get
@@ -244,7 +277,7 @@ void wan_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 //
 // Try to reconnect to it after a period of time.
 //
-void wan_attr_on_close(int status, void *context)
+static void wan_attr_on_close(int status, void *context)
 {
     struct timeval attr_tmout = {10, 0};
     struct event_base *evbase = wand_get_evbase();

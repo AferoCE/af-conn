@@ -16,6 +16,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdlib.h>
 
 #include <event2/event.h>
 
@@ -43,6 +44,7 @@ static char *sAtRspLines[AT_RSP_MAX_LINES];
 static int sAtRspNumLines;
 static int sAtRspCurrentLine;
 static int sAtChannelUp = 0;
+static int sAtError;
 
 #define AT_MAX_UNSOL_DEFS 10
 static char *sUnsolPrefixTable[AT_MAX_UNSOL_DEFS];
@@ -221,7 +223,7 @@ void at_end_cmds(void)
     pthread_mutex_unlock(&sAtMutex);
 }
 
-at_result_t at_send_cmd(at_response_type_t rsp_type, char *prefix, char *opt, int timeout)
+at_result_t at_send_cmd(at_response_type_t rspType, char *prefix, char *opt, int timeout)
 {
     struct timespec ts;
     char buf[AT_REQ_BUF_SIZE];
@@ -248,7 +250,7 @@ at_result_t at_send_cmd(at_response_type_t rsp_type, char *prefix, char *opt, in
     /* send AT command and wait for response */
     AFLOG_DEBUG3("Sending: %s", buf);
 
-    sAtRspType = rsp_type;
+    sAtRspType = rspType;
     sAtPrefix = prefix;
     sAtResult = AT_RESULT_PENDING;
 
@@ -315,11 +317,9 @@ at_result_t at_send_cmd_2_int(at_response_type_t type, char *prefix, int arg1, i
 /* Functions to handle raw AT output
 */
 
-static char *sErrorPrefixTable[] = {
-    "ERROR",
-    "+CME ERROR:",
-    "+CMS ERROR:"
-};
+#define ERROR_PREFIX "ERROR"
+#define CME_ERROR_PREFIX "+CME ERROR:"
+#define CMS_ERROR_PREFIX "+CMS ERROR:"
 
 static char *sSuccessPrefixTable[] = {
     "OK",
@@ -369,6 +369,7 @@ static void prv_parse_at_input(char *buf)
 {
     char *line, *nextline;
     at_result_t atResult = AT_RESULT_SUCCESS;
+    int atError = 0;
     int cmdReceived = 0;
 
     sAtRspNumLines = 0;
@@ -402,12 +403,17 @@ static void prv_parse_at_input(char *buf)
             /* not expecting a response to a command */
             prv_handle_unsol(line);
         } else {
-            if (prv_prefix_table_find(line, sErrorPrefixTable, ARRAY_SIZE(sErrorPrefixTable)) >= 0) {
-                /* error */
+            if (!strncmp(line, ERROR_PREFIX, sizeof(ERROR_PREFIX) - 1)) {
+                atError = strtol(&line[sizeof(ERROR_PREFIX) - 1], NULL, 10);
                 atResult = AT_RESULT_ERROR;
                 cmdReceived = 1;
-            } else if (prv_prefix_table_find(line, sSuccessPrefixTable, ARRAY_SIZE(sSuccessPrefixTable)) >= 0) {
-                /* success */
+            } else if (!strncmp(line, CME_ERROR_PREFIX, sizeof(CME_ERROR_PREFIX) - 1)) {
+                atError = strtol(&line[sizeof(CME_ERROR_PREFIX) - 1], NULL, 10);
+                atResult = AT_RESULT_CME_ERROR;
+                cmdReceived = 1;
+            } else if (!strncmp(line, CMS_ERROR_PREFIX, sizeof(CMS_ERROR_PREFIX) - 1)) {
+                atError = strtol(&line[sizeof(CMS_ERROR_PREFIX) - 1], NULL, 10);
+                atResult = AT_RESULT_CMS_ERROR;
                 cmdReceived = 1;
             } else if (sAtRspType == AT_RSP_TYPE_PREFIX) {
                 if (strncmp(line, sAtPrefix, strlen(sAtPrefix)) == 0) {
@@ -440,6 +446,13 @@ static void prv_parse_at_input(char *buf)
                 } else {
                     sAtRspLines[sAtRspNumLines++] = line;
                 }
+            } else { /* this is a AT_RSP_TYPE_OK */
+                if (prv_prefix_table_find(line, sSuccessPrefixTable, ARRAY_SIZE(sSuccessPrefixTable)) >= 0) {
+                    /* success */
+                    cmdReceived = 1;
+                } else {
+                    prv_handle_unsol(line);
+                }
             }
         }
 
@@ -448,6 +461,7 @@ static void prv_parse_at_input(char *buf)
 
     if (cmdReceived) {
         sAtResult = atResult;
+        sAtError = atError;
         pthread_cond_signal(&sAtCond);
     }
 }
@@ -524,5 +538,10 @@ char *at_rsp_next_line(void)
     } else {
         return NULL;
     }
+}
+
+int at_rsp_error(void)
+{
+    return sAtError;
 }
 
