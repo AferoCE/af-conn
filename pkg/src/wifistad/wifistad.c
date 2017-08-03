@@ -1104,7 +1104,6 @@ int32_t wifistad_conn_to_attrd(struct event_base *s_evbase)
 	return (0);
 }
 
-
 /****************
  *
  * wifistad main
@@ -1134,7 +1133,18 @@ int main()
 		AFLOG_INFO("wifistad:: using multi-threaded libevent");
 	}
 
-	s_evbase = event_base_new();
+	// Don't use cached time because of HUB-583
+	struct event_config *cfg = NULL;
+	cfg = event_config_new();
+	if (cfg == NULL) {
+		AFLOG_ERR("wifistad:: event_config_new failed");
+		return (-1);
+	}
+
+	event_config_set_flag(cfg, EVENT_BASE_FLAG_NO_CACHE_TIME);
+
+	s_evbase = event_base_new_with_config(cfg);
+	event_config_free(cfg);
 	if (s_evbase == NULL) {
 		AFLOG_ERR("wifistad::Unable to create s_evbase");
 		return (-1);
@@ -1147,17 +1157,17 @@ int main()
 		memcpy(&zero_timeout, tv_out, sizeof(struct timeval));
 	}
 
-    if (wpa_manager_init(s_evbase, NULL, NULL) < 0) {
+	if (wpa_manager_init(s_evbase, NULL, NULL) < 0) {
 		AFLOG_ERR("wifistad::wpa_manager_init: failed");
 		goto wifistad_exit;
-    }
+	}
 
-    periodic_chk_ev = event_new(s_evbase, -1, (EV_TIMEOUT|EV_PERSIST), wpa_periodic_check, NULL);
+	periodic_chk_ev = event_new(s_evbase, -1, (EV_TIMEOUT|EV_PERSIST), wpa_periodic_check, NULL);
 	if (periodic_chk_ev == NULL) {
 		AFLOG_ERR("wifistad:: create periodic_chk_ev failed.");
 		goto wifistad_exit;
 	}
-    event_add(periodic_chk_ev, &periodic_tmout_ms);
+	event_add(periodic_chk_ev, &periodic_tmout_ms);
 
 	// This should be the last
 	if (wifistad_conn_to_attrd(s_evbase) < 0) {
@@ -1167,10 +1177,10 @@ int main()
 
 #if 0
 // NOT support now
-    if (hostapd_manager_init(s_evbase, prv_hostapd_event_callback, NULL)) {
+	if (hostapd_manager_init(s_evbase, prv_hostapd_event_callback, NULL)) {
 		AFLOG_ERR("wifistad::hostapd_manager_init: failed");
-        goto wifistad_exit;
-    }
+		goto wifistad_exit;
+	}
 #endif
 
 	// Start the event loop
