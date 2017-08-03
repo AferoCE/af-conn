@@ -282,6 +282,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 	event_desc_t 		*event_desc = (event_desc_t *)param;
 	wifistad_event_t 	event;
 
+
 	AFLOG_INFO("prv_state_machine:: events=%d param=%p ", events, param);
 	if ((param == NULL) || (event_desc->event > WIFISTAD_EVENT_MAX)) {
 		AFLOG_ERR("prv_state_machine:: invalid input");
@@ -419,6 +420,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 						int8_t   echo_succ = 0;
 						wifi_cred_t * wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
 
+
 						echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
 						if (echo_succ == 1) {
 							m->wifi_setup.setup_state = WIFI_STATE_CONNECTED;
@@ -449,6 +451,11 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 							if (m->wifi_setup.data_p != NULL) {
 								free(m->wifi_setup.data_p);
 							}
+							if (m->wifi_setup.prev_network_id > 0) {
+								AFLOG_DEBUG1("prv_state_machine:: deleting prevous network (id=%d)", m->wifi_setup.prev_network_id);
+								wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.prev_network_id);
+							}
+
 							RESET_WIFI_SETUP(m);
 						}
 						else {
@@ -751,6 +758,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
 			if (echo_succ == 1) {
 				wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
+
 				if (m->wifi_setup.who_init_setup == USER_REQUEST) {
 					/* we need to save the connect info */
 					if ((wCred_p) && (wCred_p->prev_provisioned == 0)) {
@@ -762,7 +770,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				}
 				m->wifi_setup.network_id = netid;
 				m->wifi_setup.setup_state = WIFI_STATE_CONNECTED;
-				wifista_setup_send_rsp(&m->wifi_setup);
+				wifista_setup_send_rsp(&m->wifi_setup);  // send setup state
 
 
 				AFLOG_INFO("prv_wpa_event_callback:: WIFI connected to (%s). Echo successful",
@@ -777,14 +785,16 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 				wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
 
-				int8_t rssi = wpa_get_conn_network_rssi();
-				af_attr_set (AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
-							wifista_attr_on_set_finished, NULL);
-
 				if (wCred_p != NULL) {
 					/* free the memory allocated */
 					free(wCred_p);
 					wCred_p = NULL;
+				}
+
+				/* remove the previous associate network */
+				if (m->wifi_setup.prev_network_id > 0) {
+					AFLOG_DEBUG1("prv_wpa_event_callback:: deleting prevous network (id=%d)", m->wifi_setup.prev_network_id );
+					wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.prev_network_id);
 				}
 
 				RESET_WIFI_SETUP(m);
@@ -984,9 +994,6 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				break;
 			}
 
-			// m->wifi_setup.data_p = (void *)wCred_p;
-			WIFI_SETUP_CONNECT_AP(m, wCred_p, m->assoc_info.id);
-
 			if ((s_wpa_state == WPA_STATE_CONNECTING) ||
 				(s_wpa_state == WPA_STATE_READY) ) {
 					wifista_wpa_user_connect_AP(wCred_p, (void *)0);
@@ -994,16 +1001,9 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			else if (s_wpa_state == WPA_STATE_CONNECTED) {
 				/* Currently connected to an AP already.  Disconnect first.
 				 * When finishing disconnect, try to connect to the user's AP */
-				if (strncmp(m->assoc_info.ssid, wCred_p->ssid, WIFISTA_SSID_LEN) != 0) {
-					AFLOG_INFO("prv_wpa_event_callback:: Disconnecting AP=%s, Connecting AP=%s",
+				AFLOG_INFO("prv_wpa_event_callback:: Disconnecting AP=%s, Connecting AP=%s",
 							   m->assoc_info.ssid, wCred_p->ssid);
-					wpa_manager_disconnect_async(wifista_wpa_user_connect_AP, (void *) wCred_p);
-				}
-				else {
-					AFLOG_INFO("prv_wpa_event_callback:: AP (%s) already connected, inform user",
-							   wCred_p->ssid);
-					wifista_wpa_post_event(WPA_EVENT_ID_CONNECTED, (void *)m->assoc_info.id);
-				}
+				wpa_manager_disconnect_async(wifista_wpa_user_connect_AP, (void *) wCred_p);
 			}
 			else {
 				AFLOG_ERR("prv_wpa_event_callback:: Config WIFI failed, reason=bad state:(%d, %s)",

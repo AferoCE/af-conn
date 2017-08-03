@@ -63,6 +63,10 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 			}
 			break;
 
+		case AF_ATTR_CONNMGR_NETWORK_TYPE:
+			// do nothing currently (but.....)
+			break;
+
 		default:
 			AFLOG_WARNING("wifistad_attr_on_notify:: unhandled attribute=%d", attributeId);
 			break;
@@ -104,6 +108,16 @@ int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length,
 				AFLOG_INFO("wifistad_attr_on_owner_set::Recv WIFI credential(%s), post WIFI setup request",
 							wifi_cred->ssid);
 				WIFI_SETUP_CONNECT_AP(m, wifi_cred, m->assoc_info.id);
+
+				// let's update the service with our setup state formost:
+				// Note: in the scenario where we switch from one AP to another, we disconnect
+				//    the first AP which may causes network outage if only wifi is available.
+				m->wifi_setup.setup_state = WIFI_STATE_PENDING;
+				wifista_setup_send_rsp(&m->wifi_setup);
+
+				// also update the wifi steady state
+				wifista_set_wifi_steady_state(WIFI_STATE_UNKNOWN);
+
 				wifista_wpa_post_event(WPA_EVENT_ID_WIFI_CREDENTIALS, (void *) wifi_cred);
 				err = 0;
 			}
