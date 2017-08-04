@@ -1,4 +1,4 @@
- /*
+ /*F_ATTR_CONNMGR_ETH_IPADDR:
  * This contains the definitions and data structures used for managing
  * the callback functions use in the communication with attrd, as well
  * the set, get attribute functionality.
@@ -184,21 +184,6 @@ int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, 
 			break;
 		}
 
-		case AF_ATTR_CONNMGR_ETH_CONTROL:
-			{
-				uint8_t  ctrl = *value;
-
-				if (ctrl & 0x01) {  // bit 1 is on
-					AFLOG_INFO("connmgr_attr_on_owner_set:: enable WIFI");
-					af_util_system("ifconfig " CONNMGR_ETH_IFNAME " up");
-				}
-				else {
-					AFLOG_INFO("connmgr_attr_on_owner_set:: disable WIFI");
-					af_util_system("ifconfig " CONNMGR_ETH_IFNAME " down");
-				}
-			}
-			break;
-
 		default:
 			AFLOG_ERR("connmgr_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
             status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
@@ -318,23 +303,6 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 			}
 			break;
 
-		case AF_ATTR_CONNMGR_ETH_CONTROL: {
-				// ifconfig eth0 down
-				// /sys/class/net/eth0/operstate = down
-				// /sys/class/net/eth0/flags = 0x1002
-				//
-				// ifconfig eth0 up
-				// /sys/class/net/eth0/flags= 0x1003 (unplugged, or plugged)
-				// /sys/class/net/eth0/operstate = up
-
-				if (af_util_read_file(INPUT_FILE_DETAIL("/sys/class/net/" CONNMGR_ETH_IFNAME, "/operstate"), buf, sizeof(buf)) == 1) {
-					value = IS_OPERSTATE_UP(buf);
-				}
-				AFLOG_INFO("ETH_CONTROL = 0x%02x", value);
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
-			}
-			break;
-
 		case AF_ATTR_CONNMGR_WIFI_MAC_ADDR:
 		case AF_ATTR_CONNMGR_ETH_MAC_ADDR: {
 				uint8_t  mac[MAC_ADDR_LEN];
@@ -349,69 +317,66 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 			}
 			break;
 
-		case AF_ATTR_CONNMGR_WIFI_IPADDR: {
-				struct in_addr  addr;
-				memset(&addr, 0, sizeof(addr));
-				if (wlan_mon_p) {
-					inet_aton(wlan_mon_p->ipaddr, &addr);
-				}
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
-			}
-			break;
-
+		case AF_ATTR_CONNMGR_WIFI_IPADDR:
+		case AF_ATTR_CONNMGR_WAN_IPADDR:
 		case AF_ATTR_CONNMGR_ETH_IPADDR: {
 				struct in_addr  addr;
+
 				memset(&addr, 0, sizeof(addr));
-				if (eth_mon_p) {
-					inet_aton(eth_mon_p->ipaddr, &addr);
+				if (attributeId == AF_ATTR_CONNMGR_ETH_IPADDR) {
+					get_itf_ipaddr(eth_mon_p->dev_name, AF_INET, buf, INET_ADDRSTRLEN+1);
 				}
+				else if (attributeId == AF_ATTR_CONNMGR_WIFI_IPADDR) {
+					get_itf_ipaddr(wlan_mon_p->dev_name, AF_INET, buf, INET_ADDRSTRLEN+1);
+				}
+				else { // wan connection
+					get_itf_ipaddr(wan_mon_p->dev_name, AF_INET, buf, INET_ADDRSTRLEN+1);
+				}
+				inet_aton(buf, &addr);
+
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
 			}
 			break;
-
-        case AF_ATTR_CONNMGR_WAN_IPADDR: {
-                struct in_addr  addr;
-                memset(&addr, 0, sizeof(addr));
-                if (wan_mon_p) {
-                    inet_aton(wan_mon_p->ipaddr, &addr);
-                }
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(addr.s_addr), sizeof(uint32_t));
-            }
-            break;
 
 
 		case AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE:    // transmit bytes
 		case AF_ATTR_CONNMGR_WIFI_DL_DATA_USAGE: {  // receive bytes
+				uint32_t   stats = 0;
 				uint32_t   data = 0;
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WLAN_IDX);
 				if (tmp_p) {
-					data = ((attributeId == AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE) ?
+					stats = ((attributeId == AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
 				}
+				af_attr_store_uint32(&data, stats);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
 			}
 			break;
 
 		case AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE:
 		case AF_ATTR_CONNMGR_WAN_DL_DATA_USAGE: {
+				uint32_t   stats = 0;
 				uint32_t   data = 0;
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WAN_IDX);
 				if (tmp_p) {
-					data = ((attributeId == AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE) ?
+					stats = ((attributeId == AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
 				}
+				af_attr_store_uint32(&data, stats);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
 			}
 			break;
 
 		case AF_ATTR_CONNMGR_ETH_DL_DATA_USAGE:
 		case AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE: {
+				uint32_t   stats = 0;
 				uint32_t   data = 0;
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_ETH_IDX);
 				if (tmp_p) {
-					data = ((attributeId == AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE) ?
+					stats = ((attributeId == AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes : tmp_p->traffic_stats.rx_bytes);
 				}
+				af_attr_store_uint32(&data, stats);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
 			}
 			break;

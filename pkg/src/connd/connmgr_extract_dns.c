@@ -52,6 +52,7 @@ char *strcasestr(const char *haystack, const char *needle);
 #include "connmgr_util.h"
 #include "traffic_mon.h"
 #include "af_log.h"
+#include "af_util.h"
 #include "../include/hub_config.h"
 #include "connmgr_hub_opmode.h"
 
