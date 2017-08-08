@@ -15,6 +15,7 @@
 #include "wpa_manager.h"
 #include "common.h"
 #include "af_log.h"
+#include "wifistad_common.h"
 
 
 #define CONFIG_CTRL_IFACE_DIR "/var/run/wpa_supplicant"
@@ -874,8 +875,13 @@ static void *prv_op_configure_network(wpa_op_desc_t *op_desc)
 
 configure_network_done:
 	if (cfg_network_failed) {
-		AFLOG_INFO("prv_op_configure_network:: POSSIBLE BAD WIFI, issue cmd wifi up");
-		system("wifi down; wifi up");
+		if (file_exists(WIFI_EVENT_SH_FILE)) {
+			AFLOG_INFO("prv_op_configure_network:: POSSIBLE BAD WIFI, RESTART wpa_supplicant");
+			af_util_system("%s %s", WIFI_EVENT_SH_FILE, "start_wpa_supplicant");
+		} else { // assume this is for bento for now
+			AFLOG_INFO("prv_op_configure_network:: POSSIBLE BAD WIFI, issue cmd wifi up");
+			system("wifi down; wifi up");
+        }
 		return (void *)rc;
 	}
 	else {
@@ -968,13 +974,17 @@ static void prv_reconnect(void)
 
 static void prv_close_connection(void)
 {
+	AFLOG_INFO("prv_close_connection: closing wpa_supplicant connection");
     wpa_manager_t *m = &s_wpa_manager;
     if (m->ctrl_conn) {
+        AFLOG_INFO("prv_close_connection: wpa_ctrl_close(ctrl_conn)");
         wpa_ctrl_close(m->ctrl_conn);
         m->ctrl_conn = NULL;
     }
     if (m->mon_conn) {
-        wpa_ctrl_detach(m->mon_conn);
+        // AFLOG_INFO("prv_close_connection: wpa_ctrl_detach()");
+        // wpa_ctrl_detach(m->mon_conn);
+        AFLOG_INFO("prv_close_connection: wpa_ctrl_close(mon_conn)");
         wpa_ctrl_close(m->mon_conn);
         m->mon_conn = NULL;
 
@@ -1355,10 +1365,10 @@ int wpa_manager_remove_network_async(wpa_manager_asyc_cb_t cb, void *param, int 
         return -1;
     }
 
-    AFLOG_DEBUG2("wpa_manager_remove_network:: removing network(id=%d)", network_id);
     if (network_id <= 0) {
         return 0;
     }
+    AFLOG_DEBUG2("wpa_manager_remove_network:: removing network(id=%d)", network_id);
 
     pthread_mutex_lock(&m->op_cond_mutex);
 

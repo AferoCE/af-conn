@@ -41,6 +41,7 @@
 #include "wifistad.h"
 #include "mac_whitelist.h"
 #include "../include/hub_config.h"  // TODO - remove when attrd is ready
+#include "wifistad_common.h"
 
 
 // Note: name need to match attrd ownerhsip
@@ -57,8 +58,6 @@ extern int8_t cm_is_service_alive(const char *service,
 				const char *itf_string,
 				uint8_t use_echo);
 
-
-#define WIFI_EVENT_SH_FILE    "/usr/bin/wifi_event.sh"
 
 // IPC server for this daemon
 uint8_t				wifista_bootup = 1;
@@ -145,7 +144,6 @@ void  wifistad_close ();
 void wifistad_attr_on_close(int status, void *context);
 static void prv_handle_connecting_tmout (wpa_manager_t *m);
 void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param);
-static int8_t file_exists(const char *filename);
 
 extern int prv_send_req_ping_networks(void);
 extern void wpa_manager_dump();
@@ -1287,7 +1285,7 @@ void wifistad_attr_on_close(int status, void *context)
  *  1 - file exists
  *  0 - file does NOT exist
  */
-static int8_t file_exists(const char *filename)
+int8_t file_exists(const char *filename)
 {
     if (filename != NULL) {
         if (access(filename, R_OK ) != -1 ) {
