@@ -503,7 +503,7 @@ static int prv_ctrl_send_cmd(wpa_async_req_t *req)
     struct wpa_ctrl *ctrl_conn = s_wpa_manager.ctrl_conn;
 
 
-    if (ctrl_conn == NULL) {
+    if ((ctrl_conn == NULL) || (s_wpa_manager.started == 0)) {
         ret = -1;
         goto error_exit;
     }
@@ -982,12 +982,23 @@ static void prv_close_connection(void)
         m->ctrl_conn = NULL;
     }
     if (m->mon_conn) {
-        // AFLOG_INFO("prv_close_connection: wpa_ctrl_detach()");
-        // wpa_ctrl_detach(m->mon_conn);
+        // this means wpa_supplicant is not terminated and we still connect to it.
+        // Typically, when the wpa_supplicant is terminated (either kill by
+        // operator or crashed), wifistad receives a terminated event.
+        if (m->started == 1) {
+            AFLOG_INFO("prv_close_connection: wpa_ctrl_detach()");
+
+            // note: this calls wpa_ctrl_request to send the "DETACH" cmd.
+            // And in our design, the wpa_ctrl_request should run on second thread,
+            // with mutex.  Cheating by calling it here - not protected.
+            wpa_ctrl_detach(m->mon_conn);
+		}
         AFLOG_INFO("prv_close_connection: wpa_ctrl_close(mon_conn)");
         wpa_ctrl_close(m->mon_conn);
         m->mon_conn = NULL;
+	}
 
+    if (m->wpa_event) {
         event_del(m->wpa_event);
         event_free(m->wpa_event);
         m->wpa_event = NULL;
@@ -1046,6 +1057,9 @@ static int prv_open_connection(const char *iface_name)
     }
 
     AFLOG_INFO("prv_open_connection:: WPA open connetion successful");
+
+    // Now we can declare the wpa_manager is full initialized.
+    m->started = 1;
     rc = 0;
 
 error_exit:
@@ -1442,6 +1456,9 @@ int wpa_manager_destroy(void)
     // reset the cache ap list
     wifista_reset_ap_list();
 
+    // reset so we can display the warning message
+    s_warning_displayed = 0;
+
     return 0;
 }
 
@@ -1499,6 +1516,8 @@ int wpa_manager_init(struct event_base *evbase,
     }
     m->op_cond_mutex_created = 1;
 
+    // Note: the connection to wpa_supplicant is done in prv_try_connection_cb
+    // when this event is handled.
     m->tm_event = event_new(m->evbase, -1, EV_TIMEOUT, prv_try_connection_cb, NULL);
     res = event_add(m->tm_event, &zero_timeout);
     if (res != 0) {
@@ -1513,7 +1532,6 @@ int wpa_manager_init(struct event_base *evbase,
     m->op_thread_created = 1;
 
     // wpa_manager is initialized.
-    m->started = 1;
     return 0;
 
 error:
@@ -1559,26 +1577,6 @@ void wpa_manager_dump()
     AFLOG_DEBUG1("      mode = %s", m->assoc_info.mode);
 }
 
-
-/*
- * wrapper to connect
- */
-int  wpa_connect_supplicant()
-{
-    int  res;
-    wpa_manager_t *m = wifista_get_wpa_mgr();
-
-    prv_reconnect();
-    if (m->tm_event == NULL) {
-        m->tm_event = event_new(m->evbase, -1, EV_TIMEOUT, prv_try_connection_cb, NULL);
-    }
-    res = event_add(m->tm_event, &zero_timeout);
-    if (res != 0) {
-        AFLOG_ERR("wpa_connect::failed to add event %d", res);
-    }
-
-    return res;
-}
 
 /* Get the rssi value of the current connected network */
 int wpa_get_conn_network_rssi ()

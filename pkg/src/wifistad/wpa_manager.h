@@ -364,10 +364,6 @@ int wpa_manager_configure_ssid_async(wpa_manager_asyc_cb_t cb, void *param, char
 /* add new net based on bssid to supp config if it doesn't already exist. otherwise, update. */
 int wpa_manager_configure_bssid_async(wpa_manager_asyc_cb_t cb, void *param, char *ssid, char *psk, char *bssid, int priority);
 
-/* to close and reconnect to the wpa_supplicant */
-// extern void wpa_close_connection();
-extern int  wpa_connect_supplicant();
-
 
 /* retrieve the wpa_manager control block */
 extern wpa_manager_t *wifista_get_wpa_mgr();

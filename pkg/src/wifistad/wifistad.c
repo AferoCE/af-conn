@@ -103,7 +103,6 @@ typedef enum {
 	WIFISTAD_EVENT_WPA_CONNECTING_TMOUT,
 	WIFISTAD_EVENT_WPA_DISCONNECTED,
 	WIFISTAD_EVENT_WPA_TERMINATED,
-	WIFISTAD_EVENT_WPA_REESTABLISHED,
 	WIFISTAD_EVENT_HOSTAPD_DISCONNECTED,
 	WIFISTAD_EVENT_HOSTAPD_CONNECTED,
 
@@ -119,7 +118,6 @@ const char *WIFISTAD_EVENT_STR[WIFISTAD_EVENT_MAX] = {
 	"WPA_CONNECTING TMOUT",
 	"WPA_DISCONNECTED",
 	"WPA_TERMINATED",
-	"WPA_REESTABLISHED",
 	"HOSTAPD DISCONNECTED",
 	"HOSTAPD CONNECTED",
 };
@@ -1020,6 +1018,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 		case WPA_EVENT_ID_TERMINATED: {
 				// handle case equivalence to "wifi down"
 				s_wpa_state = WPA_STATE_NOT_READY;
+				m->started = 0;   // indicate the wpa_manager is going down
 				if (m->wifi_setup.who_init_setup == USER_REQUEST) {
 					m->wifi_setup.setup_state = WIFI_STATE_NOTCONNECTED;
 					af_attr_set(AF_ATTR_WIFISTAD_WIFI_SETUP_STATE,
@@ -1035,13 +1034,6 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 				prv_set_event(WIFISTAD_EVENT_WPA_TERMINATED, NULL, &zero_timeout);
 			}
-			break;
-
-
-		case WPA_EVENT_ID_REESTABLISHED:
-			// handle case scenario similar to wifi up
-			// Note: the trigger must likely come from the
-			wpa_connect_supplicant();
 			break;
 
 
