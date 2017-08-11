@@ -16,6 +16,7 @@
 #include "common.h"
 #include "af_log.h"
 #include "wifistad_common.h"
+#include "af_util.h"
 
 
 #define CONFIG_CTRL_IFACE_DIR "/var/run/wpa_supplicant"

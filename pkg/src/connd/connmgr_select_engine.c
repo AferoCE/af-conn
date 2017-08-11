@@ -24,6 +24,7 @@
 #include "af_log.h"
 #include "../include/hub_netconn_state.h"
 #include "connmgr_attributes.h"
+#include "af_util.h"
 
 extern void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
                           hub_netconn_status_t   new_status);

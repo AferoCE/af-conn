@@ -28,6 +28,7 @@
 #include "connmgr.h"
 #include "connmgr_attributes.h"
 #include "connmgr_stats.h"
+#include "connmgr_util.h"
 
 #define NET_CAPABILITY_FILE  "/usr/bin/afero_net_cap"
 
@@ -285,6 +286,7 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 				time_t    end_time;
 				double    diff = 0;
 				uint32_t  uptime = 0;
+				uint8_t buf[sizeof(uptime)];
 
 				if (attributeId == AF_ATTR_CONNMGR_ETH_UPTIME) {
 					tmp_p = eth_mon_p;
@@ -298,8 +300,9 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 				}
 				uptime = (uint32_t) diff;
 
+				af_attr_store_uint32(buf, uptime);
 				AFLOG_INFO("connmgr_attr_on_get_request:: %s  uptime=%d", ((tmp_p==NULL) ? "--":tmp_p->dev_name), uptime);
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&uptime, sizeof(uptime));
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, buf, sizeof(buf));
 			}
 			break;
 
@@ -342,42 +345,42 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 		case AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE:    // transmit bytes
 		case AF_ATTR_CONNMGR_WIFI_DL_DATA_USAGE: {  // receive bytes
 				uint32_t   stats = 0;
-				uint32_t   data = 0;
+				uint8_t    data[sizeof(stats)];
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WLAN_IDX);
 				if (tmp_p) {
 					stats = ((attributeId == AF_ATTR_CONNMGR_WIFI_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
 				}
-				af_attr_store_uint32(&data, stats);
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+				af_attr_store_uint32(data, stats);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, data, sizeof(uint32_t));
 			}
 			break;
 
 		case AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE:
 		case AF_ATTR_CONNMGR_WAN_DL_DATA_USAGE: {
 				uint32_t   stats = 0;
-				uint32_t   data = 0;
+				uint8_t    data[sizeof(stats)];
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_WAN_IDX);
 				if (tmp_p) {
 					stats = ((attributeId == AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes  : tmp_p->traffic_stats.rx_bytes);
 				}
-				af_attr_store_uint32(&data, stats);
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+				af_attr_store_uint32(data, stats);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, data, sizeof(stats));
 			}
 			break;
 
 		case AF_ATTR_CONNMGR_ETH_DL_DATA_USAGE:
 		case AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE: {
 				uint32_t   stats = 0;
-				uint32_t   data = 0;
+				uint8_t    data[sizeof(stats)];
 				cm_stats_t *tmp_p = connmgr_get_data_usage_cb(CM_MONITORED_ETH_IDX);
 				if (tmp_p) {
 					stats = ((attributeId == AF_ATTR_CONNMGR_ETH_UL_DATA_USAGE) ?
 								tmp_p->traffic_stats.tx_bytes : tmp_p->traffic_stats.rx_bytes);
 				}
-				af_attr_store_uint32(&data, stats);
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&(data), sizeof(uint32_t));
+				af_attr_store_uint32(data, stats);
+				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, data, sizeof(stats));
 			}
 			break;
 
