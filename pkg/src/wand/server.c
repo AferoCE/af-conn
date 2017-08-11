@@ -92,7 +92,7 @@ static void set_up_rssi_reporting(int on)
 }
 
 // on notification
-void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context)
+static void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context)
 {
 
     if (value == NULL) {
@@ -112,7 +112,7 @@ void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *
     }
 }
 
-void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+static void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
 {
     if (context != NULL) {
         struct bit_rate_struct *br = (struct bit_rate_struct *)context;
@@ -141,7 +141,7 @@ void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, 
     }
 }
 
-void on_usage_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+static void on_usage_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
 {
     if (context != NULL) {
         struct bit_rate_struct *br = (struct bit_rate_struct *)context;
@@ -170,7 +170,7 @@ void on_usage_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, v
     }
 }
 
-void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
+static void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
 {
     uint8_t buf[4];
 
@@ -273,7 +273,7 @@ void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
     ril_unlock_wan_status();
 }
 
-int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
+static int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
 {
     int status = AF_ATTR_STATUS_OK;
 
@@ -341,7 +341,7 @@ void wan_ipc_shutdown(void)
  *  - attempt to reconnect to attrd after a waiting period.  The waiting
  *    is 10 sec
  */
-void wan_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
+static void wan_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 {
     int rc = -1;
     struct event_base *base = (struct event_base *)arg;
