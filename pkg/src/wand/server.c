@@ -24,9 +24,25 @@ static void wan_attr_on_close(int status, void *context);
 
 #define RSSI_REPORTING_INTERVAL_SECONDS 5
 
+typedef enum {
+    BIT_RATE_STATE_NONE = 0,
+    BIT_RATE_STATE_FETCHING_USAGE,
+    BIT_RATE_STATE_FETCHING_UPTIME
+} bit_rate_state_t;
+
 /* Flag to indicate if we should periodically send signal strengh info*/
 static uint8_t sReportRssi = 0;
 static struct event *sTimerEvent = NULL;
+
+struct bit_rate_struct {
+    int32_t usage;
+    uint16_t getId;
+    bit_rate_state_t state;
+};
+
+static struct bit_rate_struct sDLBitRateStruct = { .usage = 0, .state = BIT_RATE_STATE_NONE };
+static struct bit_rate_struct sULBitRateStruct = { .usage = 0, .state = BIT_RATE_STATE_NONE };
+
 
 static void on_report_rssi_timer(evutil_socket_t fd, short what, void *arg)
 {
@@ -93,6 +109,64 @@ void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *
         default:
             AFLOG_WARNING("wan_attr_on_notify:: unhandled attribute=%d", attributeId);
             break;
+    }
+}
+
+void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+{
+    if (context != NULL) {
+        struct bit_rate_struct *br = (struct bit_rate_struct *)context;
+        if (status == AF_ATTR_STATUS_OK) {
+            if (length == sizeof(int32_t)) {
+                int32_t uptime = af_attr_get_int32(value);
+                int32_t bitrate = (uptime != 0 ? (br->usage / uptime) * 8 : 0);
+                AFLOG_DEBUG1("usage=%d,uptime=%d,bitrate=%d", br->usage, uptime, bitrate);
+                uint8_t buf[sizeof(int32_t)];
+                af_attr_store_int32(buf, bitrate);
+                int sendStatus = af_attr_send_get_response(status, br->getId, buf, sizeof(buf));
+                if (sendStatus != AF_ATTR_STATUS_OK) {
+                    AFLOG_WARNING("on_uptime_get_send:status=%d", sendStatus);
+                }
+                br->state = BIT_RATE_STATE_NONE;
+            } else {
+                AFLOG_WARNING("on_uptime_get_length:length=%d", length);
+                af_attr_send_get_response(AF_ATTR_STATUS_BAD_DATA, br->getId, NULL, 0);
+                br->state = BIT_RATE_STATE_NONE;
+            }
+        } else {
+            AFLOG_WARNING("on_uptime_get_status:status=%d", status);
+            af_attr_send_get_response(status, br->getId, NULL, 0);
+            br->state = BIT_RATE_STATE_NONE;
+        }
+    }
+}
+
+void on_usage_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+{
+    if (context != NULL) {
+        struct bit_rate_struct *br = (struct bit_rate_struct *)context;
+        if (status == AF_ATTR_STATUS_OK) {
+            if (length == sizeof(int32_t)) {
+                br->usage = af_attr_get_int32(value);
+                AFLOG_DEBUG1("Data usage is %d", br->usage);
+                int getStatus = af_attr_get(AF_ATTR_CONNMGR_WAN_UPTIME, on_uptime_get, br);
+                if (getStatus != AF_ATTR_STATUS_OK) {
+                    AFLOG_WARNING("on_usage_get_get:status=%d", getStatus);
+                    af_attr_send_get_response(getStatus, br->getId, NULL, 0);
+                    br->state = BIT_RATE_STATE_NONE;
+                } else {
+                    br->state = BIT_RATE_STATE_FETCHING_UPTIME;
+                }
+            } else {
+                AFLOG_WARNING("on_usage_get_length:length=%d", length);
+                af_attr_send_get_response(AF_ATTR_STATUS_BAD_DATA, br->getId, NULL, 0);
+                br->state = BIT_RATE_STATE_NONE;
+            }
+        } else {
+            AFLOG_WARNING("on_usage_get_status:status=%d", status);
+            af_attr_send_get_response(status, br->getId, NULL, 0);
+            br->state = BIT_RATE_STATE_NONE;
+        }
     }
 }
 
@@ -172,6 +246,26 @@ void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
         case AF_ATTR_WAN_NEIGHBOR_INFO :
             af_attr_send_get_response(0, getId, (uint8_t *)wStatus->neighborInfo, strlen(wStatus->neighborInfo) + 1);
             break;
+
+        case AF_ATTR_WAN_WAN_DL_BIT_RATE :
+            if (sDLBitRateStruct.state == BIT_RATE_STATE_NONE) {
+                sDLBitRateStruct.getId = getId;
+                int status = af_attr_get(AF_ATTR_CONNMGR_WAN_DL_DATA_USAGE, on_usage_get, &sDLBitRateStruct);
+                if (status == AF_ATTR_STATUS_OK) {
+                    sDLBitRateStruct.state = BIT_RATE_STATE_FETCHING_USAGE;
+                }
+            }
+            break;
+        case AF_ATTR_WAN_WAN_UL_BIT_RATE :
+            if (sULBitRateStruct.state == BIT_RATE_STATE_NONE) {
+                sULBitRateStruct.getId = getId;
+                int status = af_attr_get(AF_ATTR_CONNMGR_WAN_UL_DATA_USAGE, on_usage_get, &sULBitRateStruct);
+                if (status == AF_ATTR_STATUS_OK) {
+                    sULBitRateStruct.state = BIT_RATE_STATE_FETCHING_USAGE;
+                }
+            }
+            break;
+
         default :
             AFLOG_WARNING("get_attribute_not_found:attr=%d", attrId);
             break;
