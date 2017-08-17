@@ -281,7 +281,7 @@ then
     fi
 fi
 
-case `${ECHO} $1 | tr 'A-Z' 'a-z' '_'` in
+case `${ECHO} $1 | tr 'A-Z' 'a-z'` in
 
     add) fw_add_rule $ipaddr $extra_comment $check_fw; res=$? ;;
 
