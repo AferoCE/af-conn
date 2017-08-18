@@ -37,8 +37,9 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 {
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
 
-	if (value == NULL) {
-		AFLOG_ERR("wifistad_attr_on_notify:: invalid input=%p", value);
+	if ((value == NULL) || (length <= 0)) {
+		AFLOG_ERR("wifistad_attr_on_notify:: invalid input, value_null=%d, length=%d",
+					(value == NULL), length);
 		return;
 	}
 
@@ -65,6 +66,29 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 
 		case AF_ATTR_CONNMGR_NETWORK_TYPE:
 			// do nothing currently (but.....)
+			break;
+
+		case AF_ATTR_HUBBY_COMMAND: {
+				/* per Device Attribute Registry:
+				 * Size = 4 Bytes
+				 * This value will have a one byte command followed by parameters if any. The format
+				 * of the last three bytes are dictated by the first byte. This will be used to send
+				 * useful commands to Hachi like reboot. Current commands:
+				 * 1 = Reboot (last three bytes are ignored)
+				 * 2 = Clear user data - aka factory reset (last three bytes are ignored)
+				 * 3 = Enter factory test mode   (NOT SUPPORTED BY HUB)
+				 */
+				uint8_t command = value[0];
+				AFLOG_INFO("wifistad_attr_on_notify:: command=%d", command);
+				if (command == 2) { // we handle only clear user data
+					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");
+					af_util_system("%s %s", "rm", AFERO_WIFI_FILE);
+					wifistad_set_wifi_cfg_info(0);
+
+					// remove the network -- this will disconnect from the AP
+					wpa_manager_remove_network_async(NULL, NULL, m->assoc_info.id);
+				}
+			}
 			break;
 
 		default:

@@ -94,4 +94,7 @@ extern void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, v
 extern void wifistad_attr_on_open(int status, void *context);
 extern void wifista_attr_on_set_finished(int status, uint32_t attributeId, void *context);
 
+// misc
+extern void wifistad_set_wifi_cfg_info(uint8_t has_cfg);
+
 #endif //_WIFISTAD_H_

@@ -1067,9 +1067,10 @@ EV_CALLBACK_DONE:
 
 // express interested to attribute daemon that we are interested in the
 // notification for the following attributes.
-af_attr_range_t  wifistad_attr_range[2] = {
+af_attr_range_t  wifistad_attr_range[3] = {
 		{AF_ATTR_ATTRD_REPORT_RSSI_CHANGES, AF_ATTR_ATTRD_REPORT_RSSI_CHANGES},
 		{AF_ATTR_CONNMGR_NETWORK_TYPE, AF_ATTR_CONNMGR_NETWORK_TYPE},
+		{AF_ATTR_HUBBY_COMMAND, AF_ATTR_HUBBY_COMMAND},
 };
 #define	WIFISTAD_NUM_ATTR_RANGE   ARRAY_SIZE(wifistad_attr_range)
 
@@ -1287,3 +1288,11 @@ int8_t file_exists(const char *filename)
     }
     return (0);
 }
+
+
+/* set the s_has_wifi_cfg_info */
+void wifistad_set_wifi_cfg_info(uint8_t has_cfg)
+{
+	s_has_wifi_cfg_info = has_cfg;
+}
+
