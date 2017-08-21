@@ -1582,5 +1582,20 @@ void wpa_manager_dump()
 /* Get the rssi value of the current connected network */
 int wpa_get_conn_network_rssi ()
 {
-    return prv_get_rssi();
+	int32_t rssi;
+
+	/* Note: when no network is connected, wpa_supplicant returns rssi as -9999
+	 *
+	 * >SIGNAL_POLL
+	 * RSSI=-9999
+	 * LINKSPEED=0
+	 * NOISE=9999
+	 * FREQUENCY=0
+	 * per discussion: Should report -128 dBm(for all intents and purposes no signal).
+	 */
+	rssi = prv_get_rssi();
+	if (rssi < -128 ) {
+		rssi = -128;
+	}
+	return rssi;
 }
