@@ -237,8 +237,14 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 			}
 			break;
 
-		case AF_ATTR_WIFISTAD_WIFI_STEADY_STATE: // have meaning outside wifi setup
 		case AF_ATTR_WIFISTAD_WIFI_SETUP_STATE:  // only have meaning during wifi setup
+			AFLOG_DEBUG2("wifistad_attr_on_get_request:: reply setup_state=%d", m->wifi_setup.setup_state);
+			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
+									  (uint8_t *)&m->wifi_setup.setup_state, sizeof(uint8_t));
+			break;
+
+
+		case AF_ATTR_WIFISTAD_WIFI_STEADY_STATE: // have meaning outside wifi setup
 			AFLOG_DEBUG2("wifistad_attr_on_get_request:: reply steady_state=%d", m->wifi_steady_state);
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
 									  (uint8_t *)&m->wifi_steady_state, sizeof(uint8_t));

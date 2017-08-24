@@ -313,7 +313,8 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 						state = WIFISTAD_STATE_WPA_CONNECTING;
 					}
 					else {
-						wifista_set_wifi_steady_state(WIFI_STATE_UNKNOWN);
+						wifista_set_wifi_steady_state(WIFI_STATE_NOTCONNECTED);
+						m->wifi_setup.setup_state = WIFI_STATE_NOTCONNECTED;
 					}
 				}
 				break;
