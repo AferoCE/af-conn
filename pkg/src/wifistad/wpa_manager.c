@@ -1593,7 +1593,7 @@ int wpa_get_conn_network_rssi ()
 	 */
 	rssi = prv_get_rssi();
 	if (rssi < -128 ) {
-		rssi = -128;
+		rssi = 0;
 	}
 	return rssi;
 }

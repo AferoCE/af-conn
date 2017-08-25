@@ -78,14 +78,34 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 				 * 2 = Clear user data - aka factory reset (last three bytes are ignored)
 				 * 3 = Enter factory test mode   (NOT SUPPORTED BY HUB)
 				 */
+				int8_t rssi = 0;  // as not connected
+				char *blank_str = " ";
 				uint8_t command = value[0];
 				AFLOG_INFO("wifistad_attr_on_notify:: command=%d", command);
 				if (command == 2) { // we handle only clear user data
+					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset, update we are to disconnect");
+					// let's update the conclave service about these attributes:
+					// ssid, wifi steady state, wifi setup state, rssi
+					m->wifi_setup.setup_event = WPA_EVENT_ID_WIFI_CREDENTIALS;  //about wifi setup
+					m->wifi_setup.setup_state = WIFI_STATE_NOTCONNECTED;
+					wifista_setup_send_rsp(&m->wifi_setup);
+					m->wifi_setup.setup_event = 0;  // reset it
+
+					wifista_set_wifi_steady_state(WIFI_STATE_NOTCONNECTED);
+
+					af_attr_set(AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
+								wifista_attr_on_set_finished, NULL);
+
+					af_attr_set(AF_ATTR_WIFISTAD_CONFIGURED_SSID, blank_str, 1,
+								wifista_attr_on_set_finished, NULL);
+
 					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");
+
 					af_util_system("%s %s", "rm", AFERO_WIFI_FILE);
 					wifistad_set_wifi_cfg_info(0);
 
 					// remove the network -- this will disconnect from the AP
+					sleep(5);
 					wpa_manager_remove_network_async(NULL, NULL, m->assoc_info.id);
 				}
 			}
