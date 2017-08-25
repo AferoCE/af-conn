@@ -27,8 +27,8 @@
 #include <stddef.h>
 #include <syslog.h>
 #include <event.h>
-#include "event2/thread.h"
-
+#include <event2/thread.h>
+#include <time.h>
 
 #include "af_ipc_common.h"
 #include "af_ipc_server.h"
@@ -47,7 +47,7 @@
 // Note: name need to match attrd ownerhsip
 #define WIFISTAD_IPC_SERVER_NAME     "IPC.WIFISTAD"
 #define WIFISTAD_MAX_NUM_BSSID       50
-#define WIFISTAT_CONN_TMOUT_VAL		 10
+#define WIFISTAT_CONN_TMOUT_VAL		 20
 #define PERIODIC_TM_VAL     		 20
 
 
@@ -142,6 +142,7 @@ void  wifistad_close ();
 void wifistad_attr_on_close(int status, void *context);
 static void prv_handle_connecting_tmout (wpa_manager_t *m);
 void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param);
+static int prv_set_event(wifistad_event_t event, void *param, struct timeval *timeout);
 
 extern int prv_send_req_ping_networks(void);
 extern void wpa_manager_dump();
@@ -172,6 +173,53 @@ do {                                                        \
 		AFLOG_INFO("EXPIRE_CONN_TIMER: %d", s_conn_timer_set); \
 	}                                                   \
 } while (0)
+
+
+struct timespec prv_time_diff(struct timespec start, struct timespec end)
+{
+    struct timespec temp;
+
+    if ((end.tv_nsec - start.tv_nsec) < 0) {
+        temp.tv_sec = end.tv_sec - start.tv_sec - 1;
+        temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
+    } else {
+        temp.tv_sec = end.tv_sec - start.tv_sec;
+        temp.tv_nsec = end.tv_nsec - start.tv_nsec;
+    }
+    return temp;
+}
+
+
+// we want to cap the wifi setup to ~1 minute or 60 seconds:
+#define CONN_TIMER_CAP      60
+static void prv_set_wifi_setup_timer()
+{
+    static struct timespec start_conn_time;
+    struct timeval conn_timeout = {WIFISTAT_CONN_TMOUT_VAL, 0};
+
+    if (s_conn_timer_set == 0) {
+        clock_gettime(CLOCK_MONOTONIC, &start_conn_time);
+        AFLOG_INFO("prv_set_wifi_setup_timer:: initiate timer for wifi setup");
+        prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+    }
+    else {
+        struct timespec diff;
+        struct timespec time_now;
+
+        clock_gettime(CLOCK_MONOTONIC, &time_now);
+        diff = prv_time_diff(start_conn_time, time_now);
+        AFLOG_DEBUG2("prv_set_wifi_setup_timer::end=%ld.%ld, start=%ld.%ld , diff=%ld.%ld",
+					time_now.tv_sec, time_now.tv_nsec,
+					start_conn_time.tv_sec, start_conn_time.tv_nsec,
+					diff.tv_sec, diff.tv_sec);
+
+		// has wifi setup timer being 1 min or 60s?
+		// trying best to have the timer: 55s - 75s range
+        if ((diff.tv_sec != 0) && (diff.tv_sec < (CONN_TIMER_CAP - 5))) {
+            prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+        }
+    }
+}
 
 
 // attempt to connect to wifi with the configured userid/auth
@@ -697,7 +745,6 @@ static void prv_save_scan_results(char *results)
 //static void prv_wpa_event_callback(wpa_event_t *event)
 void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 {
-	struct timeval conn_timeout = {WIFISTAT_CONN_TMOUT_VAL, 0};
 	wpa_manager_t *m = wifista_get_wpa_mgr();
 	wpa_event_t *event = (wpa_event_t *)param;
 
@@ -748,7 +795,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				af_util_system("%s %s", WIFI_EVENT_SH_FILE, "connected");
 
 				/* give some extra time to check for echo */
-				prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+				prv_set_wifi_setup_timer();
 			}
 
 
@@ -798,7 +845,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			} else { //echo failed. Let's wait until tmout before sending the state to APP
 				AFLOG_INFO("prv_wpa_event_callback::Echo failed, delay sending setup. Wait for tmout");
 				m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
-				prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+				prv_set_wifi_setup_timer();
 			}
 		}
 		break;
@@ -952,7 +999,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				else {
 					if (cResult == WPA_CONN_RESULT_TEMP_DISABLED) {
 						AFLOG_INFO("prv_wpa_event_callback:: TEMP_DISABLED, start TMOUT timer");
-						prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+						prv_set_wifi_setup_timer();
 					}
 				}
 			}
@@ -962,7 +1009,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				if (cResult > 0) {
 					AFLOG_INFO("prv_wpa_event_callback::connecting, id=%d, start TMOUT timer", cResult);
 					m->wifi_setup.network_id = cResult;  // store the add_network id
-					prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+					prv_set_wifi_setup_timer();
 
 					if (m->wifi_setup.setup_state != WIFI_STATE_PENDING) {
 						m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_PENDING;
