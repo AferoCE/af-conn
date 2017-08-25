@@ -814,12 +814,10 @@ static void *prv_op_configure_network(wpa_op_desc_t *op_desc)
 		}
 	}
 
-	if (!found_bssid && op_desc->func_params.configure_network_params.bssid[0] != 0) {
-		if (prv_send_req_set_network_param(id, "bssid", op_desc->func_params.configure_network_params.bssid, 0) < 0) {
-			AFLOG_WARNING("prv_op_configure_network::failed to set network bssid");
-			rc = WPA_CONN_RESULT_NO_ID;
-            goto configure_network_done;
-		}
+	if (prv_send_req_set_network_param(id, "bssid", "any", 0) < 0) {
+		AFLOG_WARNING("prv_op_configure_network::failed to set network bssid");
+		rc = WPA_CONN_RESULT_NO_ID;
+		goto configure_network_done;
 	}
 
 	/* TBD - need to get security type? */
