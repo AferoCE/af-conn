@@ -304,7 +304,7 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 		}
 		else if ((s_wpa_state == WPA_STATE_READY) || (s_wpa_state == WPA_STATE_CONNECTING)) {
 			if ((count % 10) == 0) {
-				AFLOG_INFO("prv_wpa_periodic_check::  not connect -> post CFG_CHECK, posted %d ",
+				AFLOG_DEBUG1("prv_wpa_periodic_check::  not connect -> post CFG_CHECK, posted %d ",
 					(count == 0) ? count+1 : count);
 				count = 0;
 			}
@@ -757,7 +757,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 		goto EV_CALLBACK_DONE;
 	}
 
-	AFLOG_INFO("prv_wpa_event_callback:: > state=(%d, %s)  event->id=(%d, %s)",
+	AFLOG_DEBUG1("prv_wpa_event_callback:: > state=(%d, %s)  event->id=(%d, %s)",
 		   s_wpa_state, WPA_STATE_STR[s_wpa_state], event->id, WPA_EVENT_ID_STR[event->id]);
 
 	switch(event->id) {
@@ -1103,7 +1103,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			break;
 	}
 
-	AFLOG_INFO("prv_wpa_event_callback:: < state=(%d, %s)", s_wpa_state, WPA_STATE_STR[s_wpa_state]);
+	AFLOG_DEBUG1("prv_wpa_event_callback:: < state=(%d, %s)", s_wpa_state, WPA_STATE_STR[s_wpa_state]);
 
 
 EV_CALLBACK_DONE:
