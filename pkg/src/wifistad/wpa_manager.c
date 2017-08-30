@@ -233,7 +233,7 @@ static void prv_process_unsolicited(const char *str)
     static uint8_t  trying_auth_or_assoc = 0;
 
 
-    AFLOG_DEBUG3("prv_process_unsolicited::WPA: str=%s", str);
+    AFLOG_DEBUG2("prv_process_unsolicited::WPA: str=%s", str);
     start = strchr(str, '>');
     if (start == NULL) {
         return;
