@@ -34,6 +34,7 @@
 #include "af_ipc_server.h"
 #include "af_log.h"
 #include "connmgr_attributes.h"
+#define NETIF_NAMES_ALLOCATE
 #include "connmgr.h"
 #include "traffic_mon.h"
 #include "connmgr_stats.h"
@@ -97,6 +98,12 @@ int main() {
 
 
     openlog("connmgr", LOG_PID, LOG_USER);
+
+    if (NETIF_NAMES_GET() < 0) {
+        AFLOG_ERR("CONNMGR:: failed to get network interface names");
+        return (-1);
+    }
+
     /* initialization of stats*/
     connmgr_stats_db_init();
 
@@ -113,7 +120,7 @@ int main() {
 
     /* init afero service environment based variables, etc */
     hub_config_service_env_init();
-    cm_wifi_opmode = hub_wireless_opmode(CONNMGR_WIFI_AP_IFNAME);
+    cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
 
     /* create base event */
     connmgr_evbase = event_base_new();
@@ -329,7 +336,7 @@ cm_monitored_cb_init ()
         switch (i) {
             case CM_MONITORED_ETH_IDX:
                 /* device names for the interfaces */
-                strncpy((char *)cm_monitored_net[i].dev_name, CONNMGR_ETH_IFNAME, IFNAMSIZ);
+                strncpy((char *)cm_monitored_net[i].dev_name, NETIF_NAME(ETH_INTERFACE_0), IFNAMSIZ);
 
                 cm_monitored_net[i].mon_tmout_val.tv_sec  = CONNMGR_IDLE_PERIOD;
                 cm_monitored_net[i].mon_tmout_val.tv_usec = 0;
@@ -343,7 +350,7 @@ cm_monitored_cb_init ()
                 break;
 
             case CM_MONITORED_WLAN_IDX:
-                strncpy((char *)cm_monitored_net[i].dev_name, CONNMGR_WLAN_IFNAME, IFNAMSIZ);
+                strncpy((char *)cm_monitored_net[i].dev_name, NETIF_NAME(WIFISTA_INTERFACE_0), IFNAMSIZ);
 
                 cm_monitored_net[i].mon_tmout_val.tv_sec  = CONNMGR_IDLE_PERIOD;
                 cm_monitored_net[i].mon_tmout_val.tv_usec = 0;
@@ -366,7 +373,7 @@ cm_monitored_cb_init ()
                 cm_monitored_net[i].mon_tmout_val.tv_sec  = CONNMGR_IDLE_PERIOD;
                 cm_monitored_net[i].mon_tmout_val.tv_usec = 0;
 
-                strncpy((char *)cm_monitored_net[i].dev_name, CONNMGR_WAN_IFNAME, IFNAMSIZ);
+                strncpy((char *)cm_monitored_net[i].dev_name, NETIF_NAME(WAN_INTERFACE_0), IFNAMSIZ);
 
                 /* Not monitored, as WAN is our least preferred interface for sending
                  * traffic as using WAN cost us money
@@ -381,7 +388,7 @@ cm_monitored_cb_init ()
                 cm_monitored_net[i].dev_link_status = NETCONN_STATUS_ITFNOTSUPP_SX;
 
                 cm_monitored_net[i].conn_mon_tmout_func = NULL;
-                strncpy((char *)cm_monitored_net[i].dev_name, CONNMGR_BR_IFNAME, IFNAMSIZ);
+                strncpy((char *)cm_monitored_net[i].dev_name, NETIF_NAME(BRIDGE_INTERFACE_0), IFNAMSIZ);
 
                 cm_monitored_net[i].mon_policy.conn_monitored = 0;
                 cm_monitored_net[i].mon_policy.priority = CM_MONITORING_PRI_NONE;

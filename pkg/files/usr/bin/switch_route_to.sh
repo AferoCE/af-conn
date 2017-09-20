@@ -51,32 +51,35 @@ USE_WAN=0
 
 ROUTE_TABLE=""
 
+# Get the names of the network interfaces
+. /lib/afero_get_netif_names
+
 # The script takes an input: a network interface name,
 # Check to make sure the ifname is one of the network interface that
 # we support.
 [ $# -ge 1 ] && input_name="$1"
 if [ -n "$input_name" ]; then
 
-    ifname=$input_name
-    if [ "$ifname" == "wlan0" ]; then
-		USE_WIFI=1    	
-	elif [ "$ifname" == "wwan0" ]; then
+	ifname=$input_name
+	if [ "$ifname" == "${WIFISTA_INTERFACE_0}" ]; then
+		USE_WIFI=1
+	elif [ "$ifname" == "${WAN_INTERFACE_0}" ]; then
 		USE_WAN=1
-	elif [ "$ifname" == "eth0" ]; then
+	elif [ "$ifname" == "${ETH_INTERFACE_0}" ]; then
 		USE_ETH=1
-	else 
+	else
 	   echo "Invalid ifname -$ifname"
 	   exit 1
-	fi 
+	fi
 
-else 
+else
 	echo "no ifname -$ifname"
 	exit 1
 fi
 echo "switch_to_route:dev_name=$input_name, USE_WIFI=$USE_WIFI, USE_ETH=$USE_ETH"
 
 
-# make a copy of the route talbe 
+# make a copy of the routing table
 ROUTE_TABLE=`route -n`
 
 #echo "We have a copy of the route table:  "
@@ -87,27 +90,15 @@ get_route_metric()
 {
 	local itf_name=$1
 
-	case $itf_name in 
-	# ethernet 
-	eth0 ) 
+	if [ "x${itf_name}x" = "x${ETH_INTERFACE_0}x" ] ; then
 		return $DEFAULT_ETH_ROUTE_METRIC
-	;;
-
-	# wifi 
-	wlan0 )
+	elif [ "x${itf_name}x" = "x${WIFISTA_INTERFACE_0}x" ] ; then
 		return $DEFAULT_WLAN_ROUTE_METRIC
-	;;
-
-	# LTE 
-	wwan0 )
+	elif [ "x${itf_name}x" = "x${WAN_INTERFACE_0}x" ] ; then
 		return $DEFAULT_WWAN_ROUTE_METRIC
-	;;
-
-	* ) 
-		return 0 
-	;;
-
-	esac
+	else
+		return 0
+	fi
 }
 
 #

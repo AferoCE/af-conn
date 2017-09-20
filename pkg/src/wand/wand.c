@@ -24,6 +24,9 @@
 #include "net.h"
 #include "server.h"
 
+#define NETIF_NAMES_ALLOCATE
+#include "../include/netif_names.h"
+
 
 #define WAND_RETRY_TIME_MODEM_OFF           3
 #define WAND_RETRY_TIME_MODEM_ON            600
@@ -125,7 +128,6 @@ static uint8_t sNetworkSetUp = 0;
 static uint8_t sNetWatchStarted = 0;
 static uint8_t sIpcInitialized = 0;
 static uint8_t sDataCallLostWhileActivating = 0;
-static uint8_t sWanVariant = 0;
 static ril_data_call_request_t sDataCallReq;
 static uint8_t sDataCallReqSetUp = 0;
 
@@ -234,11 +236,11 @@ static int prv_get_apn_info(char *iccid, ril_data_call_request_t *req)
 
 static int prv_set_up_network(ril_data_call_response_t *dataCallRsp)
 {
-    /* configure wwan0 */
+    /* configure WAN network interface */
     if (af_util_system("/usr/bin/wannetwork up \"%s\" 24 \"%s\" \"%s\" \"%s\" 64 \"%s\" \"%s\"",
         dataCallRsp->ip_v4, dataCallRsp->dns1_v4, dataCallRsp->dns2_v4,
         dataCallRsp->ip_v6, dataCallRsp->dns1_v6, dataCallRsp->dns2_v6) < 0) {
-        AFLOG_ERR("prv_set_up_network:::failed to bring up wwan0 interface");
+        AFLOG_ERR("prv_set_up_network:::failed to bring up WAN network interface");
         return -1;
     }
 
@@ -251,7 +253,7 @@ static void prv_on_network_down(int event, void *context)
 }
 
 static int prv_shut_down_network(void)
-{    /* configure wwan0 */
+{   /* configure WAN network interface */
     if (af_util_system("/usr/bin/wannetwork down") < 0) {
         AFLOG_ERR("prv_shut_down_network:::failed to shut down network");
         return -1;
@@ -292,7 +294,7 @@ static void prv_activate_data_call(void)
         while (netTries < WAND_SET_UP_NETWORK_TRIES) {
             if (prv_set_up_network(&dataCallRsp) == 0) {
                 sNetworkSetUp = 1;
-                if (netwatch_init("wwan0", prv_on_network_down, NULL) == 0) {
+                if (netwatch_init(NETIF_NAME(WAN_INTERFACE_0), prv_on_network_down, NULL) == 0) {
                     sNetWatchStarted = 1;
                     /* everything is set up */
                     prv_handle_wand_event(WAND_EVENT_DATA_CALL_UP);
@@ -641,11 +643,6 @@ static void prv_handle_wand_event(wand_event_t wandEvent) {
                     break;
                 case WAND_EVENT_NO_MODEM :
                     sWandState = WAND_STATE_OFF;
-#if 0
-                    if (sWanVariant) {
-                        notify_wan_existence();
-                    }
-#endif
                     break;
                 default :
                     AFLOG_ERR("w_event:event=%s,state=%s:unhandled wan event", s_wand_event_names[wandEvent], s_wand_state_names[oldState]);
@@ -768,63 +765,14 @@ void wand_shutdown(void)
     closelog();
 }
 
-/* WAN is on unless it's in the WAND_STATE_OFF or it is a variant that does not have a WAN */
-int wan_exists(void)
-{
-    if (sWanVariant == 0) {
-        return 0;
-    } else {
-        return sWandState != WAND_STATE_OFF;
-    }
-}
-
-#define IDME_PATH "/sys/devices/platform/idme/pcb_config"
-
-static void get_pcb_config(void)
-{
-    int fd;
-    uint8_t buffer[13];
-
-    sWanVariant = 1;
-
-    fd = open(IDME_PATH, O_RDONLY);
-    if (fd < 0) {
-        AFLOG_ERR("get_pcb_config_open:errno=%d,path=%s:can't open idme entry", errno, IDME_PATH);
-        return;
-    }
-    int bytesRead = read(fd, buffer, sizeof(buffer));
-
-    if (bytesRead < 0) {
-        AFLOG_ERR("get_pcb_config_read:errno=%d,path=%s:can't read idme entry", errno, IDME_PATH);
-        close(fd);
-        return;
-    }
-
-    if (bytesRead < sizeof(buffer)) {
-        AFLOG_ERR("get_pcb_config_bytes:bytesRead=%d,path=%s:malformed pcb_config", bytesRead, IDME_PATH);
-        close(fd);
-        return;
-    }
-
-    /* create a string made of the 6th and 7th digits of pcb config */
-    uint8_t variant[3];
-    variant[0] = buffer[5];
-    variant[1] = buffer[6];
-    variant[2] = '\0';
-
-    /* variant 00 has no wan */
-    if (!strcmp((char *)variant, "00")) {
-        sWanVariant = 0;
-    }
-
-    close(fd);
-    return;
-}
-
 static int wand_init(void)
 {
-    /* get the pcb_config idme entry */
-    get_pcb_config();
+    /* get network interface names */
+    if (NETIF_NAMES_GET() < 0) {
+        return -1;
+    }
+
+    AFLOG_INFO("wan_network_interface:name=%s", NETIF_NAME(WAN_INTERFACE_0));
 
     /* allow libevent2 to use pthreads */
     evthread_use_pthreads();

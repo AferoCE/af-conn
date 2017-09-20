@@ -895,7 +895,7 @@ void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
      * Let's see update the wifi operation mode.
      **/
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
-        cm_wifi_opmode = hub_wireless_opmode(CONNMGR_WIFI_AP_IFNAME);
+        cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
 
         /* If this is the master BENTO, we want to capture the DNS packet to
          * punch holes in the FW (from the bridge interface). In case for some
@@ -938,7 +938,7 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
                  cm_netconn_count);
 
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
-        cm_wifi_opmode = hub_wireless_opmode(CONNMGR_WIFI_AP_IFNAME);
+        cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
     }
 
     return;

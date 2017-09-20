@@ -16,8 +16,7 @@ FW3="/sbin/fw3"
 LOGGER="/usr/bin/logger"
 SELF=$0
 
-# default bridge interface
-BR_APNET_IFACE="br-apnet"
+. /lib/afero_get_netif_names
 
 
 #
@@ -213,10 +212,10 @@ fw_add_forwarding_rule()
         # lan -> wifi (wlan0)
         # lan -> wlan
         # lan -> wan
-        $IPTABLES --wait -I $AFERO_FORWARD_WHITELIST 1 -p tcp -i $BR_APNET_IFACE -d $addr -j ACCEPT  \
+        $IPTABLES --wait -I $AFERO_FORWARD_WHITELIST 1 -p tcp -i $BRIDGE_INTERFACE_0 -d $addr -j ACCEPT  \
                   -m comment --comment  "$addr - $extra_comment"
 
-        $IPTABLES --wait -I $AFERO_FORWARD_WHITELIST 1 -p tcp -o $BR_APNET_IFACE -s $addr \
+        $IPTABLES --wait -I $AFERO_FORWARD_WHITELIST 1 -p tcp -o $BRIDGE_INTERFACE_0 -s $addr \
                   -m state --state ESTABLISHED,RELATED -j ACCEPT  \
                   -m comment --comment  "$addr - $extra_comment"
         return 0
@@ -236,10 +235,10 @@ fw_del_forwarding_rule()
     $LOGGER "fwcfg:: del forwarding rule: for ipaddr=$addr $AFERO_FORWARD_WHITELIST"
     echo "fwcfg:: del forwarding rule: for ipaddr=$addr to $AFERO_FORWARD_WHITELIST"
 
-    $IPTABLES --wait -D $AFERO_FORWARD_WHITELIST -p tcp -i $BR_APNET_IFACE -d $addr -j ACCEPT  \
+    $IPTABLES --wait -D $AFERO_FORWARD_WHITELIST -p tcp -i $BRIDGE_INTERFACE_0 -d $addr -j ACCEPT  \
               -m comment --comment  "$addr - $extra_comment"
 
-    $IPTABLES --wait -D $AFERO_FORWARD_WHITELIST -p tcp -o $BR_APNET_IFACE -s $addr \
+    $IPTABLES --wait -D $AFERO_FORWARD_WHITELIST -p tcp -o $BRIDGE_INTERFACE_0 -s $addr \
               -m state --state ESTABLISHED,RELATED -j ACCEPT  \
               -m comment --comment  "$addr - $extra_comment"
 

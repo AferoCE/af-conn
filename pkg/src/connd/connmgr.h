@@ -15,19 +15,20 @@
 
 #include "traffic_mon.h"
 #include "../include/hub_netconn_state.h"
+#include "../include/netif_names.h"
 
 /* network interface for wifi AP */
-#define CONNMGR_WIFI_AP_IFNAME       "wlan0-1"
+//#define CONNMGR_WIFI_AP_IFNAME       "wlan0-1"
 
 
 /* network interfaces being monitored */
-#define CONNMGR_ETH_IFNAME          "eth0"
+//#define CONNMGR_ETH_IFNAME          "eth0"
     #define CM_MONITORED_ETH_IDX        0
-#define CONNMGR_WLAN_IFNAME         "wlan0"
+//#define CONNMGR_WLAN_IFNAME         "wlan0"
     #define CM_MONITORED_WLAN_IDX       1
-#define CONNMGR_WAN_IFNAME          "wwan0"
+//#define CONNMGR_WAN_IFNAME          "wwan0"
     #define CM_MONITORED_WAN_IDX        2
-#define CONNMGR_BR_IFNAME           "br-apnet"
+//#define CONNMGR_BR_IFNAME           "br-apnet"
     #define CM_MONITORED_BR_IDX         3
 
 #define CONNMGR_LAST_MONITORED_IDX   CM_MONITORED_BR_IDX

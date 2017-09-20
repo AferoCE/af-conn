@@ -16,7 +16,7 @@ GREP=/bin/grep
 SED=/bin/sed
 AWK=/usr/bin/awk
 
-INTERFACE=wwan0
+. /lib/afero_get_netif_names
 
 RESOLV_CONF_WAN=/tmp/resolv.conf.wan
 RESOLV_CONF_TMP=/tmp/resolv.conf.wan.tmp
@@ -57,12 +57,12 @@ set_up_ip_v4()
 {
 	if [ "x${1}x" != "xx" ] ; then
 		local sn=$(subnetv4 ${2})
-		${IFCONFIG} ${INTERFACE} ${1} netmask ${sn} -arp up
+		${IFCONFIG} ${WAN_INTERFACE_0} ${1} netmask ${sn} -arp up
 		res=$?
 		if [ ${res} -ne "0" ] ; then
 			return ${res}
 		fi
-		${ROUTE} add default gw ${1} metric 50 ${INTERFACE}
+		${ROUTE} add default gw ${1} metric 50 ${WAN_INTERFACE_0}
 	fi
 }
 
@@ -70,10 +70,10 @@ set_up_ip_v6()
 {
 	if [ "x${1}x" != "xx" ] ; then
 		# set link local address of interface
-		${IFCONFIG} ${INTERFACE} add ${1}/${2}
+		${IFCONFIG} ${WAN_INTERFACE_0} add ${1}/${2}
 
 		# find the router
-		${RDISC6} -1 -r1 ${INTERFACE} > ${RDISC_OUT}
+		${RDISC6} -1 -r1 ${WAN_INTERFACE_0} > ${RDISC_OUT}
 
 		local PREFIX=`${CAT} ${RDISC_OUT} | ${GREP} Prefix | ${SED} 's/ Prefix *: //'`
 		local ROUTER=`${CAT} ${RDISC_OUT} | ${GREP} from | ${SED} 's/ from //'`
@@ -86,10 +86,10 @@ set_up_ip_v6()
 		local GLOBAL_ADDR=${GLOBAL_PREFIX}:${GLOBAL_SUFFIX}
 
 		# Set the global IP address
-		${IFCONFIG} ${INTERFACE} add ${GLOBAL_ADDR}/${SUBNET}
+		${IFCONFIG} ${WAN_INTERFACE_0} add ${GLOBAL_ADDR}/${SUBNET}
 
 		# Add the default route
-		${ROUTE} -A inet6 add default gw ${ROUTER} metric 50 ${INTERFACE}
+		${ROUTE} -A inet6 add default gw ${ROUTER} metric 50 ${WAN_INTERFACE_0}
 	fi
 }
 
@@ -108,7 +108,7 @@ usage()
 case $1 in
 	up)
 		${RM} -f ${RESOLV_CONF_WAN}
-		${IFCONFIG} ${INTERFACE} up
+		${IFCONFIG} ${WAN_INTERFACE_0} up
 
 		set_up_ip_v4 "${2}" "${3}"
 		set_up_ip_v6 "${6}" "${7}"
@@ -122,7 +122,7 @@ case $1 in
 		;;
 
 	down)
-		${IFCONFIG} ${INTERFACE} down
+		${IFCONFIG} ${WAN_INTERFACE_0} down
 		${RM} -f ${RESOLV_CONF_WAN}
 		;;
 

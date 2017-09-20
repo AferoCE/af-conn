@@ -241,7 +241,7 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 				* 3 - Up
 				*/
 				char  filename[64];
-				char  *itf=((attributeId == AF_ATTR_CONNMGR_WIFI_ITF_STATE) ? CONNMGR_WLAN_IFNAME : CONNMGR_ETH_IFNAME);
+				char  *itf=((attributeId == AF_ATTR_CONNMGR_WIFI_ITF_STATE) ? NETIF_NAME(WIFISTA_INTERFACE_0) : NETIF_NAME(ETH_INTERFACE_0));
 
 				memset (filename, 0, sizeof(filename));
 				sprintf(filename, "/sys/class/net/%s/operstate", itf);
@@ -311,10 +311,10 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 				uint8_t  mac[MAC_ADDR_LEN];
 				memset(&mac[0], 0, sizeof(mac));
 				if (attributeId == AF_ATTR_CONNMGR_WIFI_MAC_ADDR) {
-					get_hwaddr(CONNMGR_WLAN_IFNAME, &mac[0], sizeof(mac));
+					get_hwaddr(NETIF_NAME(WIFISTA_INTERFACE_0), &mac[0], sizeof(mac));
 				}
 				if (attributeId == AF_ATTR_CONNMGR_ETH_MAC_ADDR) {
-					get_hwaddr(CONNMGR_ETH_IFNAME, &mac[0], sizeof(mac));
+					get_hwaddr(NETIF_NAME(ETH_INTERFACE_0), &mac[0], sizeof(mac));
 				}
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&mac[0], sizeof(mac));
 			}

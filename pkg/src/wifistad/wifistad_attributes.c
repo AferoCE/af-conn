@@ -96,7 +96,7 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 					af_attr_set(AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
 								wifista_attr_on_set_finished, NULL);
 
-					af_attr_set(AF_ATTR_WIFISTAD_CONFIGURED_SSID, blank_str, 1,
+					af_attr_set(AF_ATTR_WIFISTAD_CONFIGURED_SSID, (uint8_t *)blank_str, 1,
 								wifista_attr_on_set_finished, NULL);
 
 					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");

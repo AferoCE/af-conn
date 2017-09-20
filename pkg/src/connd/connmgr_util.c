@@ -325,9 +325,9 @@ cm_util_parse_uevent(char *recv_buffer, int  len, cm_parse_uevent_t *parse_ueven
     //     (strncasecmp(name, CONNMGR_WAN_IFNAME, strlen(CONNMGR_WAN_IFNAME)) == 0)  ||
     //     (strncasecmp(name, CONNMGR_ETH_IFNAME, strlen(CONNMGR_ETH_IFNAME)) == 0) )
     if ( (name != NULL) &&
-         ((strncasecmp(name, cm_monitored_net[i=CM_MONITORED_WLAN_IDX].dev_name, strlen(CONNMGR_WLAN_IFNAME)) == 0) ||
-         (strncasecmp(name, cm_monitored_net[i=CM_MONITORED_WAN_IDX].dev_name, strlen(CONNMGR_WAN_IFNAME)) == 0)    ||
-         (strncasecmp(name, cm_monitored_net[i=CM_MONITORED_ETH_IDX].dev_name, strlen(CONNMGR_ETH_IFNAME)) == 0) ) )
+         ((strncasecmp(name, cm_monitored_net[i=CM_MONITORED_WLAN_IDX].dev_name, strlen(cm_monitored_net[CM_MONITORED_WLAN_IDX].dev_name)) == 0) ||
+         (strncasecmp(name, cm_monitored_net[i=CM_MONITORED_WAN_IDX].dev_name, strlen(cm_monitored_net[CM_MONITORED_WAN_IDX].dev_name)) == 0)    ||
+         (strncasecmp(name, cm_monitored_net[i=CM_MONITORED_ETH_IDX].dev_name, strlen(cm_monitored_net[CM_MONITORED_ETH_IDX].dev_name)) == 0) ) )
     {
         /* matches this connection */
 		AFLOG_DEBUG1 ("cm_util_parse_uevents:: found dev=%s", name);

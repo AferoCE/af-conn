@@ -267,15 +267,15 @@ connmgr_log_stats(const char *dev_name, uint8_t idx)
 cm_stats_t *connmgr_get_data_usage_cb(uint8_t  idx)
 {
     if (idx == CONNMGR_MONITORED_ITF_ETH) {
-        connmgr_get_ifstats(CONNMGR_ETH_IFNAME, idx);
+        connmgr_get_ifstats(NETIF_NAME(ETH_INTERFACE_0), idx);
         return (&cm_stats_db[idx]);
     }
     else if (idx == CONNMGR_MONITORED_ITF_WLAN) {
-        connmgr_get_ifstats(CONNMGR_WLAN_IFNAME, idx);
+        connmgr_get_ifstats(NETIF_NAME(WIFISTA_INTERFACE_0), idx);
         return (&cm_stats_db[idx]);
     }
     else if (idx == CONNMGR_MONITORED_ITF_WAN) {
-        connmgr_get_ifstats(CONNMGR_WAN_IFNAME, idx);
+        connmgr_get_ifstats(NETIF_NAME(WAN_INTERFACE_0), idx);
         return (&cm_stats_db[idx]);
     }
     else {
