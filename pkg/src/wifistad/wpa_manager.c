@@ -1,3 +1,15 @@
+/*
+ * wpa_manager.c
+ *
+ * The component of WIFISTAD that interacts with the WPA supplicant.
+ * It opens two connections to wpa_supplicant: control and monitor.
+ *
+ * The control connection is used to send WPA supplicant commands,
+ * while the monitor connection receives messages.  The messages
+ * are relayed as event to the event loop.
+ *
+ * Copyright (c) 2016-present, Afero Inc. All rights reserved.
+ */
 #include <dirent.h>
 #include <errno.h>
 #include <getopt.h>
@@ -874,14 +886,7 @@ static void *prv_op_configure_network(wpa_op_desc_t *op_desc)
 
 configure_network_done:
 	if (cfg_network_failed) {
-		if (file_exists(WIFI_EVENT_SH_FILE)) {
-			AFLOG_INFO("prv_op_configure_network:: POSSIBLE BAD WIFI, RESTART wpa_supplicant");
-			af_util_system("%s %s", WIFI_EVENT_SH_FILE, "start_wpa_supplicant");
-		} else { // assume this is for bento for now
-			AFLOG_INFO("prv_op_configure_network:: POSSIBLE BAD WIFI, issue cmd wifi up");
-			system("wifi down; wifi up");
-        }
-		return (void *)rc;
+		exit(EXIT_FAILURE);
 	}
 	else {
 		// if failed for any reason, let's delete the added network
