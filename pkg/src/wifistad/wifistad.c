@@ -222,6 +222,62 @@ static void prv_set_wifi_setup_timer()
 }
 
 
+/* Last step of WIFI setup (if not done, don't call this function)
+ *
+ * - call after echo alive check to send wifi setup/steady state
+ *   attributes updates
+ * - perform house cleaning for WIFI setup
+ */
+static void prv_post_echo_check_processing(uint8_t  echo_succ)
+{
+	wpa_manager_t *m = wifista_get_wpa_mgr();
+	wifi_cred_t   *wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
+
+
+	AFLOG_INFO("prv_post_echo_check_processing:: WIFI connected to (%s). Echo %s",
+                ((wCred_p == NULL) ? m->assoc_info.ssid : wCred_p->ssid),
+				((echo_succ == 1)? "succesful" : "failed") );
+	if (echo_succ == 1) {
+		// Update the WIFI setup state (to the service)
+		m->wifi_setup.setup_state = WIFI_STATE_CONNECTED;
+		wifista_setup_send_rsp(&m->wifi_setup);
+
+		// Update WIFI steady state (to the service)
+		wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
+	}
+	else {
+		// WIFI setup: AP is connected, but echo to service failed
+		// Update wifi setup state to the service
+		m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
+		wifista_setup_send_rsp(&m->wifi_setup);
+
+		// Update WIFI steady state (to the service)
+		wifista_set_wifi_steady_state(WIFI_STATE_ECHOFAILED);
+	}
+
+	// Update the configured SSID (to the service)
+	af_attr_set(AF_ATTR_WIFISTAD_CONFIGURED_SSID,
+                     (uint8_t *)&m->assoc_info.ssid, strlen(m->assoc_info.ssid),
+                     wifista_attr_on_set_finished, NULL);
+
+	// delete the previous connected network (from the wpa_supplicant)
+	if (m->wifi_setup.prev_network_id > 0) {
+		AFLOG_DEBUG1("prv_post_echo_check_processing:: deleting prevous network (id=%d)",
+                         m->wifi_setup.prev_network_id);
+		wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.prev_network_id);
+	}
+
+	// done with WIFI setup, reset
+	AFLOG_DEBUG2("iprv_post_echo_check_processing:: free wifi data, RESET_WIFI_SETUP(m)");
+	if (m->wifi_setup.data_p != NULL) {
+		free(m->wifi_setup.data_p);
+	}
+	RESET_WIFI_SETUP(m);
+
+	return;
+}
+
+
 // attempt to connect to wifi with the configured userid/auth
 static int prv_attempt_conn_with_config()
 {
@@ -276,7 +332,6 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 				(m->wifi_setup.who_init_setup == USER_REQUEST));
 	AFLOG_DEBUG2("wpa_periodic_check:: s_has_wifi_cfg_info = %d", s_has_wifi_cfg_info);
 
-
 	// user just initiated wifi setup. don't interfer with it
 	if (m->wifi_setup.who_init_setup == USER_REQUEST) {
 		return;
@@ -303,13 +358,12 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 			wifista_wpa_post_event(WPA_EVENT_ID_TERMINATED, NULL);
 		}
 		else if ((s_wpa_state == WPA_STATE_READY) || (s_wpa_state == WPA_STATE_CONNECTING)) {
+			count++;
 			if ((count % 10) == 0) {
-				AFLOG_DEBUG1("prv_wpa_periodic_check::  not connect -> post CFG_CHECK, posted %d ",
-					(count == 0) ? count+1 : count);
+				AFLOG_DEBUG1("prv_wpa_periodic_check:: not connect -> post CFG_CHECK, count=%d",
+				             count);
 				count = 0;
 			}
-			count++;
-
 			wifista_wpa_post_event(WPA_EVENT_ID_CFG_CHECK, NULL);
 		}
     }
@@ -463,74 +517,10 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 
 					if (m->wifi_setup.setup_state == WIFI_STATE_ECHOFAILED) {
 						int8_t   echo_succ = 0;
-						wifi_cred_t * wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
-
+						//wifi_cred_t * wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
 
 						echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
-						if (echo_succ == 1) {
-							m->wifi_setup.setup_state = WIFI_STATE_CONNECTED;
-							wifista_setup_send_rsp(&m->wifi_setup);
-
-							/* we need to save the connect info */
-							if ((wCred_p) && (wCred_p->prev_provisioned == 0)) {
-								wifista_save_wifi_cred(wCred_p);
-
-								AFLOG_DEBUG1("prv_attempt_conn_with_config:: s_has_wifi_cfg_info = 1");
-								s_has_wifi_cfg_info = 1;
-							}
-
-							AFLOG_INFO("prv_state_machine:: Update service, configured SSID=%s",
-									   m->assoc_info.ssid);
-
-							wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
-
-							af_attr_set (AF_ATTR_WIFISTAD_CONFIGURED_SSID,
-										 (uint8_t *)&m->assoc_info.ssid, strlen(m->assoc_info.ssid),
-										 wifista_attr_on_set_finished, NULL);
-
-							int8_t rssi = wpa_get_conn_network_rssi();
-							af_attr_set (AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
-										 wifista_attr_on_set_finished, NULL);
-
-							// release memory and reset wifi_setup
-							if (m->wifi_setup.data_p != NULL) {
-								free(m->wifi_setup.data_p);
-							}
-							if (m->wifi_setup.prev_network_id > 0) {
-								AFLOG_DEBUG1("prv_state_machine:: deleting prevous network (id=%d)", m->wifi_setup.prev_network_id);
-								wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.prev_network_id);
-							}
-
-							RESET_WIFI_SETUP(m);
-						}
-						else {
-							m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
-							wifista_setup_send_rsp(&m->wifi_setup);
-
-							// if not requested by user, then we are not going to delete
-							// the network.
-							if (m->wifi_setup.who_init_setup == USER_REQUEST) {
-								/* disconnect this from the AP since echo to the conclave failed */
-								AFLOG_INFO("prv_state_machine:: Echo failed, Disconnecting AP:%s",
-										   (wCred_p) ? wCred_p->ssid : "");
-								//wpa_manager_disconnect_async(NULL, NULL);
-
-								// delete this network just added by the user
-								wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.network_id);
-
-								// reconnect to the previous network if there is one.
-								if (m->wifi_setup.prev_network_id > 0) {
-									wpa_manager_connect_async(NULL, NULL, m->wifi_setup.prev_network_id);
-									wifista_set_wifi_steady_state(WIFI_STATE_PENDING);
-								}
-
-								AFLOG_DEBUG2("prv_state_machine:: RESET_WIFI_SETUP(m)");
-								if (m->wifi_setup.data_p != NULL) {
-									free(m->wifi_setup.data_p);
-								}
-								RESET_WIFI_SETUP(m);
-							}
-						}
+						prv_post_echo_check_processing(echo_succ);
 					}
 					break;
 
@@ -762,7 +752,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 	switch(event->id) {
 		case WPA_EVENT_ID_CONNECTED: {
-			wifi_cred_t   *wCred_p = NULL;
+			wifi_cred_t   *wCred_p  = (wifi_cred_t *)m->wifi_setup.data_p;
 			uint8_t       echo_succ = 0;
 			int8_t        netid = (int)event->result;
 
@@ -787,66 +777,32 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			/* update the states */
 			prv_set_event(WIFISTAD_EVENT_WPA_CONNECTED, (void *)1 /*done*/, &zero_timeout);
 
+            /* we need to save the connect info */
+			if ((wCred_p) && (wCred_p->prev_provisioned == 0)) {
+				wifista_save_wifi_cred(wCred_p);
 
+				AFLOG_DEBUG1("prv_wpa_event_callback:: s_has_wifi_cfg_info = 1");
+				s_has_wifi_cfg_info = 1;
+			}
 			/* script file to execute when wifi associated */
 			if (file_exists(WIFI_EVENT_SH_FILE)) {
 				AFLOG_INFO("wifistad:: exec %s ", WIFI_EVENT_SH_FILE);
 
 				af_util_system("%s %s", WIFI_EVENT_SH_FILE, "connected");
-
-				/* give some extra time to check for echo */
-				prv_set_wifi_setup_timer();
 			}
 
 
 			echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
 			if (echo_succ == 1) {
-				wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
-
-				if (m->wifi_setup.who_init_setup == USER_REQUEST) {
-					/* we need to save the connect info */
-					if ((wCred_p) && (wCred_p->prev_provisioned == 0)) {
-						wifista_save_wifi_cred(wCred_p);
-
-						s_has_wifi_cfg_info = 1;
-						AFLOG_DEBUG1("prv_wpa_event_callback:: set s_has_wifi_cfg_info=%d", s_has_wifi_cfg_info);
-					}
-				}
 				m->wifi_setup.network_id = netid;
-				m->wifi_setup.setup_state = WIFI_STATE_CONNECTED;
-				wifista_setup_send_rsp(&m->wifi_setup);  // send setup state
-
-
-				AFLOG_INFO("prv_wpa_event_callback:: WIFI connected to (%s). Echo successful",
-							((wCred_p == NULL) ? m->assoc_info.ssid : wCred_p->ssid) );
-
-				// tell the APP & service that we have a new configured SSID
-				AFLOG_INFO("prv_wpa_event_callback:: Update service, configured SSID=%s",
-						   m->assoc_info.ssid);
-				af_attr_set (AF_ATTR_WIFISTAD_CONFIGURED_SSID,
-							 (uint8_t *)&m->assoc_info.ssid, strlen(m->assoc_info.ssid),
-							 wifista_attr_on_set_finished, NULL);
-
-				wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
-
-				if (wCred_p != NULL) {
-					/* free the memory allocated */
-					free(wCred_p);
-					wCred_p = NULL;
-				}
-
-				/* remove the previous associate network */
-				if (m->wifi_setup.prev_network_id > 0) {
-					AFLOG_DEBUG1("prv_wpa_event_callback:: deleting prevous network (id=%d)", m->wifi_setup.prev_network_id );
-					wpa_manager_remove_network_async(NULL, NULL, m->wifi_setup.prev_network_id);
-				}
-
-				RESET_WIFI_SETUP(m);
+				prv_post_echo_check_processing(1);
 			} else { //echo failed. Let's wait until tmout before sending the state to APP
 				AFLOG_INFO("prv_wpa_event_callback::Echo failed, delay sending setup. Wait for tmout");
 				m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
-				prv_set_wifi_setup_timer();
 			}
+
+            /* give some extra time to handle all the event and time to process echo */
+            prv_set_wifi_setup_timer();
 		}
 		break;
 
