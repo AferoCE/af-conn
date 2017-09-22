@@ -358,7 +358,7 @@ static void wan_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 
         wan_ipc_shutdown();
         wand_shutdown();
-        exit(-1);
+        exit(1);
     }
 }
 

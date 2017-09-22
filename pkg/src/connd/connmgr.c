@@ -245,7 +245,7 @@ connmgr_exit:       /* clean up */
     AFLOG_INFO("CONNMGR::Service is shutting down");
     connmgr_shutdown();
 
-    return 0;
+    return EXIT_FAILURE; /* There's no clean exit for this daemon */
 }
 
 /* close down sockets and cleanup

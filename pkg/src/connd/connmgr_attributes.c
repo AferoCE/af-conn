@@ -400,7 +400,7 @@ void connmgr_attr_on_open(int status, void *context)
 	if (status != AF_ATTR_STATUS_OK) {
 		/* absolutely need to connect.  otherwise, we are useless */
 		AFLOG_ERR("connmgr_attr_on_open:: open failed, status=%d", status);
-		exit(-2);
+		exit(EXIT_FAILURE);
 	}
 
 	// after initialization, let's send the network_type
@@ -430,7 +430,7 @@ void connmgr_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
         AFLOG_ERR("connmgr_reconn_to_attrd:: event_base went bonkers.exit");
 
         connmgr_shutdown();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 }
 

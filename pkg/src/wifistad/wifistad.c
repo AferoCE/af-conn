@@ -547,7 +547,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 			if (wpa_manager_init(s_evbase, NULL, NULL) < 0) {
 				AFLOG_ERR("wifistad::wpa_manager_init: failed.  Exit");
 				wifistad_close ();
-				exit(EXIT_SUCCESS);
+				exit(EXIT_FAILURE);
 			}
 		}
 	}
@@ -1252,7 +1252,7 @@ void wifistad_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 		AFLOG_ERR("wifistad_reconn_to_attrd:: event_base went bonkers.exit");
 
 		wifistad_close();
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 }
 

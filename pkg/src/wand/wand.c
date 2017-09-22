@@ -841,7 +841,7 @@ int main()
 
     wand_shutdown();
 
-    return 0;
+    return 1; /* This daemon has no clean exit condition */
 }
 
 /* get the wand evbase
