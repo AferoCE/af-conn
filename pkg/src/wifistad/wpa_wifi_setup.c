@@ -30,6 +30,7 @@
 #include "wpa_manager.h"
 #include "af_log.h"
 #include "wifistad.h"
+#include "afwp.h"
 
 
 // Wifi setup is initiated when the daemon receives an 'ap list request'.
@@ -46,93 +47,132 @@
 //        err msg
 
 
+static wifi_cred_t s_wifiCredCache;
+static int s_wifiCredCacheValid = 0;
+
 /*
- * save the WIFI credentials to a file
+ * store the WIFI credentials to a file
  */
 void
-wifista_save_wifi_cred(wifi_cred_t   *cred_p)
+wifista_store_wifi_cred(wifi_cred_t *cred_p)
 {
 	FILE	*fp = NULL;
 
+	s_wifiCredCacheValid = 0;
+
 	if (cred_p == NULL) {
-		AFLOG_ERR("wifista_save_wifi_cred:: Invalid input.  Save failed");
+		AFLOG_ERR("wifista_store_wifi_cred:: Invalid input.  Save failed");
 		return;
 	}
 
+	if (strlen(cred_p->ssid) <= 0) {
+		AFLOG_WARNING("wifista_store_wifi_cred:: BAD credentials, ssid=%s", cred_p->ssid);
+		return;
+	}
+
+	memcpy(&s_wifiCredCache, cred_p, sizeof(s_wifiCredCache));
+	s_wifiCredCacheValid = 1;
+
 	/* open the file to write, create it if it doesn't exist */
-	if (strlen(cred_p->ssid) > 0) {
-		AFLOG_DEBUG2("wifista_save_wifi_cred:: saving credentials for ssid=%s", cred_p->ssid);
-		fp = fopen(AFERO_WIFI_FILE, "w+");
-		if (fp) {
-			// first line is the SSID
-			fprintf(fp, "%s\n", cred_p->ssid);
-			// second line is the key
-			fprintf(fp, "%s\n", cred_p->key);
-			fclose(fp);
-		}
-		else {
-			AFLOG_WARNING("wifista_save_wifi_cred:: Unable to open credential file for write");
-		}
+	AFLOG_DEBUG2("wifista_store_wifi_cred:: saving credentials for ssid=%s", cred_p->ssid);
+	fp = fopen(AFERO_WIFI_FILE, "w+");
+	if (fp == NULL) {
+		AFLOG_WARNING("wifista_store_wifi_cred:: Unable to open credential file for write");
+		return;
 	}
-	else {
-		AFLOG_WARNING("wifista_save_wifi_cred:: BAD credentials, ssid=%s", cred_p->ssid);
+
+	fprintf(fp, "%s", cred_p->ssid);
+	fclose(fp);
+
+	if (af_wp_set_passphrase((uint8_t *)cred_p->key)) {
+		AFLOG_WARNING("wifista_store_wifi_cred:: Can't set passphrase; removing cred file");
+		unlink(AFERO_WIFI_FILE);
 	}
-	return;
+}
+
+int
+wifista_get_wifi_cred(wifi_cred_t *cred_p)
+{
+	/* check params */
+	if (cred_p == NULL) {
+		AFLOG_ERR("wifista_get_wifi_cred::cred_p_NULL=%d", cred_p == NULL);
+		return 1;
+	}
+
+	/* copy if cache is valid */
+	if (s_wifiCredCacheValid) {
+		memcpy(cred_p, &s_wifiCredCache, sizeof(s_wifiCredCache));
+		return 0;
+	}
+
+	AFLOG_DEBUG2("wifista_get_wifi_cred:s_wifiCredCacheValid=%d", s_wifiCredCacheValid);
+	return 1;
 }
 
 
 /*
  * return
- * 		1 		successful
- * 		0 		failed
+ *  0 successful
+ *  1 failed to get SSID from file
+ *  2 failed to get PSK from HSM
  */
-int8_t   wifista_read_wifi_cred(wifi_cred_t  *cred_p)
+int
+wifista_load_wifi_cred(void)
 {
-	FILE 		*fp = NULL;
-	char    	line[64];
-	uint8_t  	rc = 0;
-	int 		len = 0;
+	char line[64];
+	int  rc;
 
-	if (cred_p == NULL) {
-		AFLOG_ERR("wifista_read_wifi_cred:: INVALID input.  Save failed");
-		return (rc);
-	}
+	// open the file for read
+	FILE *fp = fopen(AFERO_WIFI_FILE, "r");
 
-	/* open the file to write, create it if it doesn't exist */
-	fp=fopen(AFERO_WIFI_FILE, "r");
 	if (fp) {
-		// reads ssid
-		AFLOG_INFO("wifista_read_wifi_cred:: read info");
+		int  len;
+
+		// read ssid
+		AFLOG_INFO("wifista_load_wifi_cred:: read info");
 		memset(line, 0, sizeof(line));
 		if (fgets(line, sizeof(line), fp) != NULL) {
-			len = strlen(line) - 1;
-			len = ((len > WIFISTA_SSID_LEN) ? WIFISTA_SSID_LEN : len);
-			strncpy(cred_p->ssid, line, len);
+			len = strlen(line);
+			AFLOG_DEBUG2("len=%d,line=%s", len, line);
+			// remove trailing newline if it exists
+			if (line[len - 1] == '\n') {
+				len--;
+			}
+			// clamp the length to 32 characters
+			if (len > WIFISTA_SSID_LEN) {
+				len = WIFISTA_SSID_LEN;
+			}
+			strncpy(s_wifiCredCache.ssid, line, len);
+			s_wifiCredCache.ssid[len] = '\0';
 
-			rc = (len > 1);
-		}
-		else {
-			AFLOG_WARNING("wifista_read_wifi_cred:: read SSID failed");
-		}
+			fclose(fp);
 
-		memset(line, 0, sizeof(line));
-		if ((rc) && (fgets(line, sizeof(line), fp) != NULL)) {
-			len = strlen(line) - 1;
-			len = ((len > 64) ? 64 : len);
-			strncpy(cred_p->key, line, len);
-
+			if (len > 0) {
+				if (af_wp_get_passphrase((uint8_t *)s_wifiCredCache.key, sizeof(s_wifiCredCache.key))) {
+					// can't get key
+					rc = 2;
+				} else {
+					// got key successfully
+					s_wifiCredCacheValid = 1;
+					rc = 0;
+				}
+			} else {
+				AFLOG_WARNING("wifista_load_wifi_cred:empty SSID");
+				rc = 1;
+			}
+		} else {
+			AFLOG_WARNING("wifista_load_wifi_cred:: read SSID failed");
+			fclose(fp);
 			rc = 1;
 		}
-
-		fclose(fp);
 	}
 	else {
-		AFLOG_WARNING("wifista_read_wifi_cred:: open failed");
+		AFLOG_WARNING("wifista_load_wifi_cred:: open failed");
+		rc = 1;
 	}
 
-	// debug -- TODO remove
-	AFLOG_DEBUG2("wifista_read_wifi_cred:: ssid=%s", cred_p->ssid );
-	return (rc);
+	AFLOG_DEBUG2("wifista_load_wifi_cred:: ssid=%s", s_wifiCredCache.ssid );
+	return rc;
 }
 
 

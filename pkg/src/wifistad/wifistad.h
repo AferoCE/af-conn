@@ -57,7 +57,7 @@ extern wifista_ap_list_t  cached_ap_list;
 
 typedef struct {
     uint8_t prev_provisioned;
-    char    *bssid;    // valid if previous previsioned
+    char    *bssid;    // valid if previous provisioned
     char    ssid[HUB_SSID_LEN + 1];
     char    key[HUB_WIFI_CRED_LEN + 1];
 } wifi_cred_t;
@@ -66,10 +66,16 @@ typedef struct {
 #define  AFERO_WIFI_FILE        "/afero_nv/.afero_wifi.txt"
 
 // Wifi setup APIs
-extern int8_t wifista_read_wifi_cred(wifi_cred_t  *cred_p);
+
+/* Loads credentials from file / HSM; returns 0 if successful, 1 if failed to open file, 2 if failed to read HSM */
+extern int wifista_load_wifi_cred(void);
+/* Returns by reference the cached credentials; returns 0 if successful, 1 if no cached credentials available */
+extern int wifista_get_wifi_cred(wifi_cred_t *cred_p);
+/* Stores new credentials by updating cache and writing through to file / HSM */
+extern void wifista_store_wifi_cred(wifi_cred_t *cred_p);
+
 extern void wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p);
 extern void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result_p);
-extern void wifista_save_wifi_cred(wifi_cred_t   *cred_p);
 
 extern void wifista_wpa_user_connect_AP(void *my_param, void *result);
 extern char *wifista_find_bssid_in_ap_list(char *ssid);
