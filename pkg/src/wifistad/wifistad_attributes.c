@@ -26,6 +26,7 @@
 #include "wpa_manager.h"
 #include "af_log.h"
 #include "af_util.h"
+#include "afwp.h"
 
 
 // timeout value for report to
@@ -101,7 +102,9 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 
 					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");
 
-					af_util_system("%s %s", "rm", AFERO_WIFI_FILE);
+					unlink(AFERO_WIFI_FILE);
+					af_wp_set_passphrase("");
+
 					wifistad_set_wifi_cfg_info(0);
 
 					// remove the network -- this will disconnect from the AP
