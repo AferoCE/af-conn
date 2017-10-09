@@ -21,7 +21,7 @@ define Package/connectivity
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Kiban connectivity manager
-  DEPENDS:=+libevent2 +libpthread +libpcap +librt +af-ipc +attrd +af-util
+  DEPENDS:=+libevent2 +libpthread +libpcap +librt +af-ipc +attrd +af-util +af-sec
   URL:=http://www.kibanlabs.com/
 endef
 
