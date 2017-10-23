@@ -14,6 +14,6 @@ AC_CONFIG_FILES([
  src/atcmd/Makefile
  src/connd/Makefile
 ])
-
+AM_CONDITIONAL([WAN_RIL_HL7xxx], [test ! x$WAN_RIL = xELS61])
 LT_INIT
 AC_OUTPUT
