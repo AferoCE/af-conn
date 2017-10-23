@@ -31,7 +31,7 @@
 #define WAND_RETRY_TIME_MODEM_OFF           3
 #define WAND_RETRY_TIME_MODEM_ON            600
 #define WAND_RETRY_TIME_DATA_CALL           3
-#define WAND_MODEM_CHECK_TIME               5
+#define WAND_MODEM_CHECK_TIME               10
 #define WAND_IDLE_TIME                      10
 #define WAND_NUM_PS_FAILURES_UNTIL_REBOOT   60  // Should be approximately 5 minutes
 
@@ -417,6 +417,27 @@ static int prv_modem_power(char *command)
     return 0;
 }
 
+static int prv_modem_off(void)
+{
+    if (sRilStarted) {
+        ril_shutdown();
+        sRilStarted = 0;
+    }
+
+    /* shut down the network just in case */
+    prv_shut_down_network();
+
+    int result = prv_modem_power(WANCONTROL_OFF);
+    if (result != 0) {
+        AFLOG_ERR("wanoff:result=%d:can't turn WAN off", result);
+        prv_handle_wand_event(WAND_EVENT_MODEM_UP);
+        return -1;
+    }
+
+    prv_handle_wand_event(WAND_EVENT_MODEM_DOWN);
+    return 0;
+}
+
 #define NO_WAN 254
 #define WAN_POWER_ON_TRIES 4
 static int prv_modem_on(void)
@@ -453,7 +474,7 @@ static int prv_modem_on(void)
             /* get the proper APN for the modem */
             if (prv_get_apn_info(iccid, &sDataCallReq) < 0) {
                 AFLOG_ERR("modem_on_get_apn_info:errno=%d", errno);
-                prv_modem_power(WANCONTROL_OFF);
+                prv_modem_off();
                 /* TODO this should be fatal */
                 continue;
             }
@@ -474,27 +495,6 @@ static int prv_modem_on(void)
     prv_handle_wand_event(WAND_EVENT_MODEM_DOWN);
     /* TODO this should be fatal */
     return -1;
-}
-
-static int prv_modem_off(void)
-{
-    if (sRilStarted) {
-        ril_shutdown();
-        sRilStarted = 0;
-    }
-
-    /* shut down the network just in case */
-    prv_shut_down_network();
-
-    int result = prv_modem_power(WANCONTROL_OFF);
-    if (result != 0) {
-        AFLOG_ERR("wanoff:result=%d:can't turn WAN off", result);
-        prv_handle_wand_event(WAND_EVENT_MODEM_UP);
-        return -1;
-    }
-
-    prv_handle_wand_event(WAND_EVENT_MODEM_DOWN);
-    return 0;
 }
 
 #define CHECK_IN_COUNT_INTERVAL 360 // One hour for a ten second interval
