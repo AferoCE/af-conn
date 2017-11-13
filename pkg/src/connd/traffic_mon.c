@@ -163,16 +163,14 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
     }
     AFLOG_INFO("cm_conn_mon_init::dev=%s, filter used:%s", dev, pcap_filter);
     if (pcap_compile(pcap_handle, &fp, pcap_filter, 0, PCAP_NETMASK_UNKNOWN) == -1) {
-        AFLOG_WARNING("cm_conn_mon_init::dev:%s, Error calling pcap_compile", dev);
-        connmgr_close_pcap_session(conn_mon_p->my_idx);
-        return (-1);
-    }
-
-    /* set the filter */
-    if (pcap_setfilter(pcap_handle, &fp) == -1) {
-        connmgr_close_pcap_session(conn_mon_p->my_idx);
-        AFLOG_ERR("cm_conn_mon_init::dev:%s, Error setting pcap filter", dev);
-        return (-1);
+        AFLOG_WARNING("cm_conn_mon_init::dev=%s:err=%s, Error calling pcap_compile", dev, pcap_geterr(pcap_handle));
+    } else {
+        /* set the filter */
+        if (pcap_setfilter(pcap_handle, &fp) == -1) {
+            connmgr_close_pcap_session(conn_mon_p->my_idx);
+            AFLOG_ERR("cm_conn_mon_init::dev=%s:err=%s, Error setting pcap filter", dev, pcap_geterr(pcap_handle));
+            return (-1);
+        }
     }
 
 
