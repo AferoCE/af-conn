@@ -9,3 +9,8 @@ endif
 
 wand_LDADD = -laf_attr -laf_ipc -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt -lresolv
 wand_CFLAGS = -Wall -ggdb3
+
+.PHONY : build_info.h
+$(wand_SOURCES) : build_info.h
+build_info.h :
+	$(srcdir)/make-build-info.sh $(srcdir)

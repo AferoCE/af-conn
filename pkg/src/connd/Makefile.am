@@ -14,3 +14,8 @@ connmgr_SOURCES = connmgr.c 	  \
 				  wildcard_match.c
 connmgr_LDADD = -laf_attr -laf_ipc -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt
 connmgr_CFLAGS = -Wall -ggdb
+
+.PHONY : build_info.h
+$(connmgr_SOURCES): build_info.h
+build_info.h :
+	$(srcdir)/make-build-info.sh $(srcdir)

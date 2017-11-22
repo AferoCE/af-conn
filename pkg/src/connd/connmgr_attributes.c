@@ -30,6 +30,8 @@
 #include "connmgr_stats.h"
 #include "connmgr_util.h"
 
+#include "build_info.h"
+
 #define NET_CAPABILITY_FILE  "/usr/bin/afero_net_cap"
 
 
@@ -226,12 +228,15 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
 			break;
 
-        case AF_ATTR_CONNMGR_DEBUG_LEVEL:
-            value = g_debugLevel;
-            AFLOG_INFO("connmgr_attr_on_get_request: debug_level=%d", value);
-            af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
-            break;
+		case AF_ATTR_CONNMGR_DEBUG_LEVEL:
+			value = g_debugLevel;
+			AFLOG_INFO("connmgr_attr_on_get_request: debug_level=%d", value);
+			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
+			break;
 
+		case AF_ATTR_CONNMGR_REVISION:
+			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)REVISION, sizeof(REVISION));
+			break;
 
 		case AF_ATTR_CONNMGR_ETH_ITF_STATE:
 		case AF_ATTR_CONNMGR_WIFI_ITF_STATE: {

@@ -27,6 +27,7 @@
 #include "af_log.h"
 #include "af_util.h"
 #include "afwp.h"
+#include "build_info.h"
 
 
 // timeout value for report to
@@ -278,7 +279,11 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 				AFLOG_INFO("wifistad_attr_on_get_request: debug_level=%d", level);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&level, sizeof(int8_t));
 			}
-            break;
+			break;
+
+		case AF_ATTR_WIFISTAD_REVISION :
+			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)REVISION, sizeof(REVISION));
+			break;
 
 		case AF_ATTR_WIFISTAD_WIFI_KEY_MGMT: {
 			/* 0 - None
