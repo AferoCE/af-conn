@@ -109,8 +109,10 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 					wifistad_set_wifi_cfg_info(0);
 
 					// remove the network -- this will disconnect from the AP
-					sleep(5);
+					sleep(2);
 					wpa_manager_remove_network_async(NULL, NULL, m->assoc_info.id);
+					sleep(2);
+					exit(0); /* exit so that the watcher can start it afresh */
 				}
 			}
 			break;
