@@ -826,9 +826,14 @@ static int wand_init(void)
 
 uint32_t g_debugLevel = LOG_DEBUG2;
 
+extern const char REVISION[];
+extern const char BUILD_DATE[];
+
 int main()
 {
     openlog("wand", LOG_PID, LOG_USER);
+
+    AFLOG_INFO("start_wand:revision=%s,build_date=%s", REVISION, BUILD_DATE);
 
     if (wand_init() == 0) {
         sWandState = WAND_STATE_WAITING_FOR_DOWN;

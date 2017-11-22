@@ -1099,6 +1099,9 @@ int32_t wifistad_conn_to_attrd(struct event_base *s_evbase)
 	return (0);
 }
 
+extern const char REVISION[];
+extern const char BUILD_DATE[];
+
 /****************
  *
  * wifistad main
@@ -1111,17 +1114,19 @@ int main()
 
 	openlog("wifistad", LOG_PID, LOG_USER);
 
-    /* load up the Wi-Fi credentials cache and block if PSK should be available but isn't */
-    uint8_t loadStatus;
-    while(1) {
-        loadStatus = wifista_load_wifi_cred();
-        if (loadStatus != 2) {
-            break;
-        }
-        sleep(5);
-    }
+	AFLOG_INFO("start_wifistad:revision=%s,build_date=%s", REVISION, BUILD_DATE);
 
-    // We have valid configuration information only if the load function returns 0
+	/* load up the Wi-Fi credentials cache and block if PSK should be available but isn't */
+	uint8_t loadStatus;
+	while(1) {
+		loadStatus = wifista_load_wifi_cred();
+		if (loadStatus != 2) {
+			break;
+		}
+		sleep(5);
+	}
+
+	// We have valid configuration information only if the load function returns 0
 	s_has_wifi_cfg_info = (loadStatus == 0);
 	AFLOG_DEBUG1("wifistad:: s_has_wifi_cfg_info=%d", s_has_wifi_cfg_info);
 

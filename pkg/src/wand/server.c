@@ -17,6 +17,7 @@
 #include "server.h"
 #include "af_attr_client.h"
 #include "ril.h"
+#include "build_info.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -264,6 +265,9 @@ static void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
                     sULBitRateStruct.state = BIT_RATE_STATE_FETCHING_USAGE;
                 }
             }
+            break;
+        case AF_ATTR_WAN_REVISION:
+            af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)REVISION, sizeof(REVISION));
             break;
 
         default :

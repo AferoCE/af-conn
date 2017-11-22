@@ -16,3 +16,8 @@ wifistad_SOURCES = 	wifistad.c \
 
 wifistad_LDADD = -laf_attr -laf_ipc -lafwp -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt
 wifistad_CFLAGS = -Wall -ggdb3 -std=gnu99 -I../../include -DCONFIG_CTRL_IFACE -DCONFIG_CTRL_IFACE_UNIX -D_GNU_SOURCE
+
+.PHONY : build_info.h
+$(wifistad_SOURCES) : build_info.h
+build_info.h :
+	$(srcdir)/make-build-info.sh $(srcdir)
