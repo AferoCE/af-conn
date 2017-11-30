@@ -29,6 +29,7 @@
 #include "af_log.h"
 #include "wifistad_common.h"
 #include "af_util.h"
+#include "../include/netif_names.h"
 
 
 #define CONFIG_CTRL_IFACE_DIR "/var/run/wpa_supplicant"
@@ -1095,7 +1096,8 @@ static void prv_try_connection_cb(evutil_socket_t fd, short what, void *arg)
         return;
 
     if (m->ctrl_iface_name == NULL) {
-        m->ctrl_iface_name = prv_get_default_iface_name();
+//        m->ctrl_iface_name = prv_get_default_iface_name();
+        m->ctrl_iface_name = NETIF_NAME(WIFISTA_INTERFACE_0);
     }
 
     if (!prv_open_connection(m->ctrl_iface_name) == 0) {
