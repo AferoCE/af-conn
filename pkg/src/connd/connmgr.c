@@ -103,8 +103,7 @@ int main() {
     AFLOG_INFO("start_connmgr:revision=%s,build_date=%s", REVISION, BUILD_DATE);
 
     if (NETIF_NAMES_GET() < 0) {
-        AFLOG_ERR("CONNMGR:: failed to get network interface names");
-        return (-1);
+        AFLOG_WARNING("CONNMGR:: failed to get network interface names; using defaults");
     }
 
     /* initialization of stats*/

@@ -42,6 +42,8 @@
 #include "mac_whitelist.h"
 #include "../include/hub_config.h"  // TODO - remove when attrd is ready
 #include "wifistad_common.h"
+#define NETIF_NAMES_ALLOCATE
+#include "../include/netif_names.h"
 
 
 // Note: name need to match attrd ownerhsip
@@ -1115,6 +1117,10 @@ int main()
 	openlog("wifistad", LOG_PID, LOG_USER);
 
 	AFLOG_INFO("start_wifistad:revision=%s,build_date=%s", REVISION, BUILD_DATE);
+
+	if (NETIF_NAMES_GET() < 0) {
+		AFLOG_WARNING("wifistad:: failed to get network interface names; using defaults");
+	}
 
 	/* load up the Wi-Fi credentials cache and block if PSK should be available but isn't */
 	uint8_t loadStatus;
