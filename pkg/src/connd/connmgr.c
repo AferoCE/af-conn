@@ -60,6 +60,10 @@ int                net_link_route_fd  = -1;
 uint8_t            cm_netconn_count = 0;
 uint32_t           cm_wifi_opmode = HUB_WIFI_OPMODE_UNKNOWN;
 
+
+uint8_t            g_enable_fw = 1;  // enable firewall flag
+
+
 // We need to send device attribute(s) to service/APPs (via hubby).
 // However, during network transition, it takes time for the
 // network to be ready.  So, let's set a flag, and wait until
@@ -70,6 +74,7 @@ uint8_t            attr_set_pending = 0;
 cm_conn_monitor_cb_t  *cm_itf_inuse_p = NULL;
 
 uint32_t            g_debugLevel = LOG_DEBUG1;
+
 
 /* data structure for managing network connection info */
 cm_conn_monitor_cb_t cm_monitored_net[CONNMGR_NUM_MONITORED_ITF];
@@ -89,14 +94,55 @@ af_attr_range_t  connmgr_attr_range[] = {
 };
 
 
+static void usage()
+{
+    printf("usage: connmgr [ -d ] \n");
+    printf("    -d : Disable the Afero Firewall\n");
+	printf("\n");
+    printf("** By defualt, the Afero Firewall is enabled \n");
+}
+
+static int parse_options(int argc, char * argv[])
+{
+	int option = 0;
+	int errflg = 0;
+
+    while ((option = getopt(argc, argv, "d")) != -1) {
+        switch (option) {
+            case 'd':
+				g_enable_fw = 0;
+				break;
+
+			default:
+				errflg = 1;
+				break;
+		}
+	}
+
+	if (errflg) {
+		usage();
+		return (-1);
+	}
+	return (0);
+}
+
+
 extern const char REVISION[];
 extern const char BUILD_DATE[];
 /*
  * connmgr main
  */
-int main() {
+int main(int argc, char *argv[])
+{
     int     i;
 
+
+	/* parse the input options if any */
+	if (argc > 1) {
+		if (parse_options(argc, argv) < 0) {
+			return (-1);
+		}
+	}
 
     openlog("connmgr", LOG_PID, LOG_USER);
 
@@ -105,6 +151,17 @@ int main() {
     if (NETIF_NAMES_GET() < 0) {
         AFLOG_WARNING("CONNMGR:: failed to get network interface names; using defaults");
     }
+
+	/* let's setup the afero based firewall here */
+    AFLOG_INFO("start_connmgr:Firewall is %s", (g_enable_fw==1)?"enabled":"disabled");
+	if (g_enable_fw == 1) {
+		/* setup the Afero Firewall */
+		if (af_util_system("/etc/config/firewall.user") < 0) {
+			AFLOG_ERR("CONNMGR:: starting FIREWALL failed");
+		}
+		sleep(1);  // allow fw time to finish
+	}
+
 
     /* initialization of stats*/
     connmgr_stats_db_init();
@@ -226,15 +283,6 @@ int main() {
     AFLOG_INFO("CONNMGR:: Network INUSE=(dev:%s), num of connected network: %d",
                ((CM_GET_INUSE_NETCONN_CB() == NULL) ? "NULL" : CM_GET_INUSE_NETCONN_CB()->dev_name),
                cm_netconn_count);
-
-
-    /* Recovery action: we need to flush the firewall rules in the event the
-     * connection manager crashes and then restarts.  Let's restart the FW.
-     */
-    if (af_util_system("/usr/bin/fwcfg restart") < 0) {
-        AFLOG_ERR("CONNMGR:: restart FIREWALL failed");
-    }
-    sleep(1);   //allow time for FW to restart
 
 
     // Start the event loop

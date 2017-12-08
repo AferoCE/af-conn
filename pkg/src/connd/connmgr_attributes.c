@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <time.h>       /* time_t, struct tm, difftime, time, mktime */
 
 #include "af_rpc.h"
 #include "af_util.h"
