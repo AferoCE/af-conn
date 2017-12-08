@@ -62,6 +62,19 @@ extern uint8_t  attr_set_pending;
 #define CONNMGR_SET_ATTR_PENDING(pending)  (attr_set_pending = pending)
 
 
+/* Firewall control flag */
+extern uint8_t  g_enable_fw;
+
+/* Don't execute the code, just return if FW is disabled */
+/* Note: rc is the 'ok' return code of the function      */
+#define CM_DONT_ENABLE_FIREWALL(rc)               			\
+do {                                                    	\
+    if ( g_enable_fw == 0 ) { 								\
+		return (rc);  									    \
+    }                                                   	\
+} while (0)
+
+
 /* prototype for packet capture handler function */
 typedef  void (*cm_handle_pkt_capture_func_t) (evutil_socket_t fd, short events, void *arg);
 
