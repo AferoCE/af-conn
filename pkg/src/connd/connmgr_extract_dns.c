@@ -381,9 +381,10 @@ cm_extract_dns_rrec(register const u_char *bp, u_int length, int is_mdns)
     cm_wl_entry_t       *wl_dn_entry_p = NULL;
 
 
-	/* if FW functionality is disable - then do nothing */
-	CM_DONT_ENABLE_FIREWALL(0);
-
+    /* if FW functionality is disable - then do nothing */
+    if (CM_IS_FIREWALL_DISABLED) {
+        return;
+    }
 
     memset(answers, 0, sizeof(answers));
     rest_pkt_len = length;
@@ -798,9 +799,10 @@ int cm_manage_dns_wl_ip_list(cm_wl_entry_t      *wl_dn_entry_p,
     char                buf[60];
 
 
-	/* if FW functionality is disable - then do nothing */
-	CM_DONT_ENABLE_FIREWALL(0);
-
+    /* if FW functionality is disable - then do nothing */
+    if (CM_IS_FIREWALL_DISABLED) {
+        return (0);
+    }
 
     if (wl_dn_entry_p == NULL) {
         AFLOG_ERR("cm_manage_wl_ip_list:: Invalid whitelist db entry pointer");
@@ -914,9 +916,10 @@ cm_dns_reset_wl_entries(void)
 {
     int   i;
 
-	/* if FW functionality is disable - then do nothing */
-	CM_DONT_ENABLE_FIREWALL(0);
-
+    /* if FW functionality is disable - then do nothing */
+    if (CM_IS_FIREWALL_DISABLED) {
+        return;
+    }
 
     // ************
     // MUTEX
@@ -951,7 +954,9 @@ int
 cm_dns_init_wl_db(void)
 {
 	/* if FW functionality is disable - then do nothing */
-	CM_DONT_ENABLE_FIREWALL(0);
+    if (CM_IS_FIREWALL_DISABLED) {
+        return (0);
+    }
 
     memset(&af_wl_dns_db, 0, sizeof(af_wl_dns_db));
 
@@ -979,8 +984,10 @@ cm_dns_init_wl_db(void)
 void
 cm_dns_wl_db_cleanup(void)
 {
-	/* if FW functionality is disable - then do nothing */
-	CM_DONT_ENABLE_FIREWALL(0);
+    /* if FW functionality is disable - then do nothing */
+    if (CM_IS_FIREWALL_DISABLED) {
+        return;
+    }
 
     pthread_mutex_destroy(&af_wl_dns_db.db_mutex);
 
