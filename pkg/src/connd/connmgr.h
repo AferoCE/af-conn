@@ -65,14 +65,7 @@ extern uint8_t  attr_set_pending;
 /* Firewall control flag */
 extern uint8_t  g_enable_fw;
 
-/* Don't execute the code, just return if FW is disabled */
-/* Note: rc is the 'ok' return code of the function      */
-#define CM_DONT_ENABLE_FIREWALL(rc)               			\
-do {                                                    	\
-    if ( g_enable_fw == 0 ) { 								\
-		return (rc);  									    \
-    }                                                   	\
-} while (0)
+#define CM_IS_FIREWALL_DISABLED   (g_enable_fw == 0)
 
 
 /* prototype for packet capture handler function */
