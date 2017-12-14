@@ -149,6 +149,10 @@ static int prv_set_event(wifistad_event_t event, void *param, struct timeval *ti
 extern int prv_send_req_ping_networks(void);
 extern void wpa_manager_dump();
 
+// [HUB-740]
+// let's scan twice before sending the result back
+static uint8_t  s_scan_count = 0;
+
 static uint8_t  s_has_wifi_cfg_info = 0;
 // peridic check timer event
 static struct event *periodic_chk_ev = NULL;
@@ -726,6 +730,8 @@ static void prv_save_scan_results(char *results)
 	else {
 		AFLOG_WARNING("prv_save_scan_result:: no results");
 	}
+
+	s_scan_count = 0;
 	return;
 }
 
@@ -829,6 +835,11 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			// it or while we are in the middle of connecting
 			if ((m->wifi_setup.who_init_setup != INIT_NONE) &&
 				(m->wifi_setup.setup_event != WPA_EVENT_ID_WIFI_CREDENTIALS)) {
+				if (s_scan_count < 2) {
+					AFLOG_INFO("wifistad:: Perform a second scan before sending result");
+					wifista_wpa_post_event(WPA_EVENT_ID_WIFI_SCAN_REQUESTED, (void *)&(m->wifi_setup));
+					break;
+				}
 				AFLOG_DEBUG3("prv_wpa_event_callback:: save scan result");
 
 				// we got the scan results back - two options:
@@ -878,6 +889,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			} else {
 				wpa_manager_status_async(NULL, NULL);
 
+				s_scan_count++;
 				AFLOG_DEBUG2("prv_wpa_event_callback:: SCAN request, start scan");
 				WIFI_SETUP_SCAN_REQUEST(m);
 				prv_set_event(WIFISTAD_EVENT_SCAN, NULL, &zero_timeout);
