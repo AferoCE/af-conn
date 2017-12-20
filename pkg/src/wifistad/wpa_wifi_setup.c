@@ -289,17 +289,7 @@ wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p)
 			break;
 
 
-		default:  // send the wifi_steady_state
-			AFLOG_DEBUG2("wifista_setup_send_rsp:: sending (WIFI_STEADY_STATE=%d) update",
-						 wifi_setup_p->setup_state);
-			status = af_attr_set (AF_ATTR_WIFISTAD_WIFI_STEADY_STATE,
-								  (uint8_t *)&wifi_setup_p->setup_state,
-								  sizeof(wifi_setup_p->setup_state),
-								  wifista_attr_on_set_finished,
-								  NULL);
-			if (status != AF_ATTR_STATUS_OK) {
-				AFLOG_ERR("wifista_setup_send_rsp:: set WIFI_STEADY_STATE failed, status=%d", status);
-			}
+		default:  
 			break;
 	}
 

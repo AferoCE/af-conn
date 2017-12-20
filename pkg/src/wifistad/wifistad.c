@@ -254,7 +254,7 @@ static void prv_post_echo_check_processing(uint8_t  echo_succ)
 	else {
 		// WIFI setup: AP is connected, but echo to service failed
 		// Update wifi setup state to the service
-		m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
+		m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
 		wifista_setup_send_rsp(&m->wifi_setup);
 
 		// Update WIFI steady state (to the service)
@@ -618,6 +618,7 @@ static void prv_handle_connecting_tmout (wpa_manager_t *m)
 		m->wifi_setup.setup_state = WIFI_STATE_ASSOCATIONFAILED;
 	}
 	wifista_setup_send_rsp(&m->wifi_setup);
+	wifista_set_wifi_steady_state(m->wifi_setup.setup_state);
 
 	if (m->wifi_setup.data_p != NULL) {
 		free(m->wifi_setup.data_p);
@@ -806,7 +807,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				prv_post_echo_check_processing(1);
 			} else { //echo failed. Let's wait until tmout before sending the state to APP
 				AFLOG_INFO("prv_wpa_event_callback::Echo failed, delay sending setup. Wait for tmout");
-				m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
+				m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
 			}
 
 			/* give some extra time to handle all the event and time to process echo */
@@ -916,18 +917,18 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 				wait_for_tmout = 0;
 				if (cResult == WPA_CONN_RESULT_ASS_REJECT) {
-					m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_ASSOCATIONFAILED;
+					m->wifi_setup.setup_state = WIFI_STATE_ASSOCATIONFAILED;
 					wait_for_tmout = 1;
 				}
 				else if (cResult == WPA_CONN_RESULT_HANDSHAKE_FAILED) {
-					m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_HANDSHAKEFAILED;
+					m->wifi_setup.setup_state = WIFI_STATE_HANDSHAKEFAILED;
 					wait_for_tmout = 1;
 				}
 				else if (cResult == WPA_CONN_RESULT_INVALID_SSID) {
-					m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_SSID_NOT_FOUND;
+					m->wifi_setup.setup_state = WIFI_STATE_SSID_NOT_FOUND;
 				}
 				else if (cResult == WPA_CONN_RESULT_SET_PSK_FAILED) {
-					m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_HANDSHAKEFAILED;
+					m->wifi_setup.setup_state = WIFI_STATE_HANDSHAKEFAILED;
 				}
 				else if (cResult == WPA_CONN_RESULT_TEMP_DISABLED) {
 					// when association is temporarily disabled, we should already know
@@ -938,7 +939,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 					wait_for_tmout = 1;
 				}
 				else {
-					m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_UNKNOWN;
+					m->wifi_setup.setup_state = WIFI_STATE_UNKNOWN;
 				}
 
 				/* If all the user specified wifi config inputs are valid, then we need to wait until
@@ -950,6 +951,8 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 					// remember the network id or err code.  Notify service/APP and clean up
 					wifista_setup_send_rsp(&m->wifi_setup);
+					wifista_set_wifi_steady_state(m->wifi_setup.setup_state);
+
 					if (m->wifi_setup.data_p != NULL) {
 						free(m->wifi_setup.data_p);
 						m->wifi_setup.data_p = NULL;
@@ -982,8 +985,9 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 					prv_set_wifi_setup_timer();
 
 					if (m->wifi_setup.setup_state != WIFI_STATE_PENDING) {
-						m->wifi_steady_state = m->wifi_setup.setup_state = WIFI_STATE_PENDING;
+						m->wifi_setup.setup_state = WIFI_STATE_PENDING;
 						wifista_setup_send_rsp(&m->wifi_setup);
+						wifista_set_wifi_steady_state(WIFI_STATE_PENDING);
 					}
 				}
 
