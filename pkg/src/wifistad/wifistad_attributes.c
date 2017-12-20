@@ -398,15 +398,40 @@ void wifista_report_rssi_tmout_handler (evutil_socket_t fd, short events, void *
 void wifista_set_wifi_steady_state(uint8_t    steady_state)
 {
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
+	static uint8_t reported_steady_state_pending = 0;
+
 
 	AFLOG_DEBUG2("wifista_set_wifi_steady_state:: %d -> %d", m->wifi_steady_state, steady_state);
+
+
+	/* -------------------------- */
+	/* REPORT THE STEADY STATE    */
+	/* -------------------------- */
+	if (m->wifi_setup.who_init_setup != USER_REQUEST) {
+		if ((steady_state <= WIFI_STATE_PENDING) && (reported_steady_state_pending == 1)) {
+			// We have already send pending prior to this, but the wifi has not
+			// been connected since sending the pending.  Don't transition to pending
+			// when we restart reconnecting cycle again.
+			return;
+		}
+	}
+
 	if (m->wifi_steady_state != steady_state) {
 		int rc;
-
+		AFLOG_DEBUG2("wifista_set_wifi_steady_state:: Sendng WIFI_STEADY_STATE=%d to service", steady_state);
 		rc = af_attr_set(AF_ATTR_WIFISTAD_WIFI_STEADY_STATE, (uint8_t *)&steady_state, sizeof(uint8_t),
 						 wifista_attr_on_set_finished, NULL);
 		if (rc != AF_ATTR_STATUS_OK) {
 			AFLOG_ERR("wifistad_report_rssi_change:: set failed (WIFI_STEADY_STATE=%d)", steady_state);
+		}
+
+		if (m->wifi_setup.who_init_setup != USER_REQUEST) {
+			if (steady_state == WIFI_STATE_PENDING) {
+				reported_steady_state_pending = 1;
+			}
+			else if ((steady_state == WIFI_STATE_CONNECTED) || (steady_state == WIFI_STATE_ECHOFAILED)) {
+				reported_steady_state_pending = 0;
+			}
 		}
 	}
 
