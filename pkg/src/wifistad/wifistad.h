@@ -95,7 +95,7 @@ extern uint8_t wifista_is_mac_in_wl(char *macaddr);
 
 // attr callback functions
 extern void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context);
-extern int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context);
+extern void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context);
 extern void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *context);
 extern void wifistad_attr_on_open(int status, void *context);
 extern void wifista_attr_on_set_finished(int status, uint32_t attributeId, void *context);

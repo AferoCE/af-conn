@@ -67,28 +67,28 @@ static int8_t  get_hwaddr(const char *dev, uint8_t *hw, size_t n)
 	char     fname[80];
 	uint32_t bytes[6], i;
 
-    if ((dev == NULL) || (n < MAC_ADDR_LEN)) {
-        AFLOG_ERR("af_util_get_hwaddr:: invalid input");
-        return (-1);
-    }
+	if ((dev == NULL) || (n < MAC_ADDR_LEN)) {
+		AFLOG_ERR("af_util_get_hwaddr:: invalid input");
+		return (-1);
+	}
 
 	memset(bytes, 0, sizeof(bytes));
 	memset(fname, 0, sizeof(fname));
-    sprintf(fname, SYSFS_HW_ADDR_PATH, dev);
+	sprintf(fname, SYSFS_HW_ADDR_PATH, dev);
 	if (af_util_read_file(fname, &buf[0], sizeof(buf)) > 0) {
-        sscanf(buf, "%x:%x:%x:%x:%x:%x",
-				&bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4], &bytes[5]);
+		sscanf(buf, "%x:%x:%x:%x:%x:%x",
+			   &bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4], &bytes[5]);
 
 		/* convert to uint8_t */
 		for( i = 0; i < 6; ++i )
 			hw[i] = (uint8_t) bytes[i];
 
-        //af_log_buffer(LOG_DEBUG1, "READ_BUF", &buf[0], sizeof(buf));
-        //af_log_buffer(LOG_DEBUG1, "HW_ADDRD", hw, 6);
+		//af_log_buffer(LOG_DEBUG1, "READ_BUF", &buf[0], sizeof(buf));
+		//af_log_buffer(LOG_DEBUG1, "HW_ADDRD", hw, 6);
 
-        return (0);
-    }
-    return (-1);
+		return (0);
+	}
+	return (-1);
 }
 
 
@@ -165,13 +165,13 @@ void connmgr_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, vo
 // on_set:
 // another client has changed an attribute this client owns
 // assume value - contains the key value pairs of ssid, and credentials.
-int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
+void connmgr_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context)
 {
     int status = AF_ATTR_STATUS_OK;
 
 	if (value == NULL) {
 		AFLOG_ERR("connmgr_attr_on_owner_set:: invalid value=%p", value);
-		return AF_ATTR_STATUS_UNSPECIFIED;
+		return;
 	}
 
 
@@ -195,7 +195,10 @@ int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, 
 
 	} // switch
 
-	return status;
+	int sendStatus = af_attr_send_set_response(status, setId);
+	if (sendStatus != AF_ATTR_STATUS_OK) {
+		AFLOG_ERR("connmgr_attr_on_owner_set_send:sendStatus=%d,status=%d,setId=%d", sendStatus, status, setId);
+	}
 }
 
 
@@ -422,22 +425,22 @@ void connmgr_attr_on_open(int status, void *context)
  */
 void connmgr_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 {
-    int rc = -1;
-    struct event_base *base = (struct event_base *)arg;
+	int rc = -1;
+	struct event_base *base = (struct event_base *)arg;
 
-    if (base) {
-        AFLOG_INFO("connmgr_reconn_to_attrd:: reconnecting");
-        rc = connmgr_conn_to_attrd(base);
-        if (rc < 0) {
-            connmgr_attr_on_close(AF_ATTR_STATUS_OK, NULL);
-        }
-    }
-    else {
-        AFLOG_ERR("connmgr_reconn_to_attrd:: event_base went bonkers.exit");
+	if (base) {
+		AFLOG_INFO("connmgr_reconn_to_attrd:: reconnecting");
+		rc = connmgr_conn_to_attrd(base);
+		if (rc < 0) {
+			connmgr_attr_on_close(AF_ATTR_STATUS_OK, NULL);
+		}
+	}
+	else {
+		AFLOG_ERR("connmgr_reconn_to_attrd:: event_base went bonkers.exit");
 
-        connmgr_shutdown();
-        exit(EXIT_FAILURE);
-    }
+		connmgr_shutdown();
+		exit(EXIT_FAILURE);
+	}
 }
 
 
@@ -451,13 +454,13 @@ void connmgr_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
 //
 void connmgr_attr_on_close(int status, void *context)
 {
-    struct timeval attr_tmout = {10, 0};
+	struct timeval attr_tmout = {10, 0};
 
-    AFLOG_INFO("connmgr_attr_on_close:: IPC connection to ATTRD closed, status=%d", status);
-    if (connmgr_evbase) {
-        AFLOG_INFO("connmgr_attr_on_close:: schedule reconnection to ATTRD");
-        event_base_once(connmgr_evbase, -1, EV_TIMEOUT, connmgr_reconn_to_attrd,
-                        (void *)connmgr_evbase, &attr_tmout);
-    }
+	AFLOG_INFO("connmgr_attr_on_close:: IPC connection to ATTRD closed, status=%d", status);
+	if (connmgr_evbase) {
+		AFLOG_INFO("connmgr_attr_on_close:: schedule reconnection to ATTRD");
+		event_base_once(connmgr_evbase, -1, EV_TIMEOUT, connmgr_reconn_to_attrd,
+						(void *)connmgr_evbase, &attr_tmout);
+	}
 }
 

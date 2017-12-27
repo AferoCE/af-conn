@@ -277,13 +277,13 @@ static void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
     ril_unlock_wan_status();
 }
 
-static int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
+static void wan_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context)
 {
     int status = AF_ATTR_STATUS_OK;
 
     if (value == NULL) {
-        AFLOG_ERR("wan_attr_on_owner_set:: invalid value=%p", value);
-        return AF_ATTR_STATUS_UNSPECIFIED;
+        AFLOG_ERR("wan_attr_on_owner_set_value:value_NULL=%d", value == NULL);
+        return;
     }
 
     switch (attributeId) {
@@ -293,18 +293,21 @@ static int wan_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int lengt
                 level = LOG_DEBUG_OFF;
             }
             g_debugLevel = level;
-            AFLOG_INFO("wan_attr_on_owner_set:i debug_level=%d", level);
+            AFLOG_INFO("wan_attr_on_owner_set_debug:debug_level=%d", level);
             break;
         }
 
         default:
-            AFLOG_ERR("wan_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
+            AFLOG_ERR("wan_attr_on_owner_set_unknown:attributeId=%d", attributeId);
             status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
             break;
 
     } // switch
 
-    return status;
+    int sendStatus = af_attr_send_set_response(status, setId);
+    if (sendStatus != AF_ATTR_STATUS_OK) {
+        AFLOG_ERR("wan_attr_on_owner_set_send:sendStatus=%d,status=%d,setId=%d", sendStatus, status, setId);
+    }
 }
 
 

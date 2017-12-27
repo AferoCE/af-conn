@@ -28,7 +28,7 @@ extern void cm_attr_set_network_type ();
 
 // attrd related callbacks
 extern void connmgr_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context);
-extern int connmgr_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context);
+extern void connmgr_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context);
 extern void connmgr_attr_on_set_finished(int status, uint32_t attributeId, void *context);
 extern void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *context);
 extern void connmgr_attr_on_open(int status, void *context);

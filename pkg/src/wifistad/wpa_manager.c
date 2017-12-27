@@ -72,7 +72,6 @@ static int prv_send_req_signal_poll(void);
 
 static void prv_ctrl_cmd_cb(char *msg, size_t len);
 
-static char *prv_get_default_iface_name(void);
 static void prv_reconnect(void);
 static void prv_close_connection(void);
 static int  prv_open_connection(const char *iface_name);
@@ -942,6 +941,7 @@ static void *prv_op_remove_network(wpa_op_desc_t *op_desc)
 }
 
 /***************** WPA Supplicant Connection Helpers *****************/
+#if 0
 /***
  * Read from /var/run/wpa_supplicant directory for the wifi station
  * interface name
@@ -967,6 +967,7 @@ static char * prv_get_default_iface_name(void)
 
     return iface_name;
 }
+#endif
 
 static void prv_reconnect(void)
 {

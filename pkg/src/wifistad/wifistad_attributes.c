@@ -104,7 +104,7 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");
 
 					unlink(AFERO_WIFI_FILE);
-					af_wp_set_passphrase("");
+					af_wp_set_passphrase((uint8_t *)"");
 
 					wifistad_set_wifi_cfg_info(0);
 
@@ -128,7 +128,7 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 // on_set:
 // another client has changed an attribute this client owns
 // assume value - contains the key value pairs of ssid, and credentials.
-int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length, void *context)
+void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context)
 {
 	wifi_cred_t    *wifi_cred = NULL;
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
@@ -137,7 +137,7 @@ int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length,
 
 	if (value == NULL) {
 		AFLOG_ERR("wifistad_attr_on_owner_set:: invalid value=%p", value);
-		return AF_ATTR_STATUS_UNSPECIFIED;
+		return;
 	}
 
 
@@ -205,12 +205,15 @@ int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length,
 
 		default:
 			AFLOG_ERR("wifistad_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
-            status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
+			status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
 			break;
 
 	} // switch
 
-	return status;
+	int sendStatus = af_attr_send_set_response(status, setId);
+	if (sendStatus != AF_ATTR_STATUS_OK) {
+		AFLOG_ERR("connmgr_attr_on_owner_set_send:sendStatus=%d,status=%d,setId=%d", sendStatus, status, setId);
+	}
 }
 
 
@@ -232,7 +235,7 @@ void wifista_attr_on_set_finished(int status, uint32_t attributeId, void *contex
 void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *context)
 {
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
-	uint8_t 		len;
+	uint8_t		   len;
 
 	AFLOG_INFO("wifistad_attr_on_get_request:: get request for attribute=%d", attributeId);
 
