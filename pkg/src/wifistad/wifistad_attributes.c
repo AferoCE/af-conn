@@ -166,7 +166,7 @@ int wifistad_attr_on_owner_set(uint32_t attributeId, uint8_t *value, int length,
 				wifista_setup_send_rsp(&m->wifi_setup);
 
 				// also update the wifi steady state
-				wifista_set_wifi_steady_state(WIFI_STATE_UNKNOWN);
+				wifista_set_wifi_steady_state(WIFI_STATE_PENDING);
 
 				wifista_wpa_post_event(WPA_EVENT_ID_WIFI_CREDENTIALS, (void *) wifi_cred);
 				err = 0;
