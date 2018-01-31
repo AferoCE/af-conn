@@ -941,34 +941,6 @@ static void *prv_op_remove_network(wpa_op_desc_t *op_desc)
 }
 
 /***************** WPA Supplicant Connection Helpers *****************/
-#if 0
-/***
- * Read from /var/run/wpa_supplicant directory for the wifi station
- * interface name
- */
-static char * prv_get_default_iface_name(void)
-{
-    char *iface_name = NULL;
-    struct dirent *dent;
-    DIR *dir;
-
-    dir = opendir(CONFIG_CTRL_IFACE_DIR);
-    if (!dir)
-        return NULL;
-
-    while ((dent = readdir(dir))) {
-        if (strcmp(dent->d_name, ".") == 0 || strcmp(dent->d_name, "..") == 0)
-            continue;
-        AFLOG_INFO("prv_get_default_iface_name::WPA: Selected interface:%s", dent->d_name);
-        iface_name = strdup(dent->d_name);
-        break;
-    }
-    closedir(dir);
-
-    return iface_name;
-}
-#endif
-
 static void prv_reconnect(void)
 {
     prv_close_connection();
@@ -1097,7 +1069,6 @@ static void prv_try_connection_cb(evutil_socket_t fd, short what, void *arg)
         return;
 
     if (m->ctrl_iface_name == NULL) {
-//        m->ctrl_iface_name = prv_get_default_iface_name();
         m->ctrl_iface_name = NETIF_NAME(WIFISTA_INTERFACE_0);
     }
 
@@ -1432,7 +1403,6 @@ int wpa_manager_destroy(void)
     m->rpt_rssi_event = NULL;
 
     if (m->ctrl_iface_name != NULL) {
-        free(m->ctrl_iface_name);
         m->ctrl_iface_name = NULL;
     }
 
