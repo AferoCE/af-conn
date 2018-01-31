@@ -321,7 +321,7 @@ static void prv_unsolicited_recv_cb(evutil_socket_t fd, short what, void *arg)
 
 
     if (mon_conn == NULL) {
-        prv_reconnect();
+        AFLOG_ERR("prv_unsolicited_recv_cb:: detect mon_conn == NULL");
         return;
     }
 
@@ -943,6 +943,7 @@ static void *prv_op_remove_network(wpa_op_desc_t *op_desc)
 /***************** WPA Supplicant Connection Helpers *****************/
 static void prv_reconnect(void)
 {
+    AFLOG_DEBUG2("prv_reconnect:: Entering prv_reconnect");
     prv_close_connection();
     if (prv_open_connection(s_wpa_manager.ctrl_iface_name) < 0)
         return;
@@ -952,7 +953,6 @@ static void prv_reconnect(void)
 
 static void prv_close_connection(void)
 {
-	AFLOG_INFO("prv_close_connection: closing wpa_supplicant connection");
     wpa_manager_t *m = &s_wpa_manager;
     if (m->ctrl_conn) {
         AFLOG_INFO("prv_close_connection: wpa_ctrl_close(ctrl_conn)");
@@ -1057,14 +1057,16 @@ error_exit:
 /*
  * Try to open a connection to the ctrl interface.
  *  - if open connection failed
- *      enable a 1 second timer to try again
+ *      enable a 4 second timer to try again
  */
 static void prv_try_connection_cb(evutil_socket_t fd, short what, void *arg)
 {
     wpa_manager_t   *m = &s_wpa_manager;
-    struct timeval  tmout_ms = {1, 0};
+    struct timeval  tmout_ms = {4, 0};
     struct event    *tm_event;
 
+
+     AFLOG_DEBUG2("Entering prv_try_connection_cb");
     if (m->ctrl_conn)
         return;
 
@@ -1073,9 +1075,7 @@ static void prv_try_connection_cb(evutil_socket_t fd, short what, void *arg)
     }
 
     if (!prv_open_connection(m->ctrl_iface_name) == 0) {
-        tm_event = event_new(m->evbase, -1, EV_TIMEOUT, prv_try_connection_cb, NULL);
-        event_add(tm_event, &tmout_ms);
-
+        event_base_once(m->evbase, -1, EV_TIMEOUT, prv_try_connection_cb, NULL, &tmout_ms);
         if (!s_warning_displayed) {
             AFLOG_WARNING("prv_try_connection_cb::Could not connect to wpa_supplicant: "
                     "%s - re-trying \n", m->ctrl_iface_name);
