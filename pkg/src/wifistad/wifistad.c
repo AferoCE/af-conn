@@ -387,7 +387,8 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 	wifistad_event_t	event;
 
 
-	AFLOG_INFO("prv_state_machine:: events=%d param=%p ", events, param);
+	AFLOG_INFO("prv_state_machine:: events=%d", events);
+	AFLOG_DEBUG2("                    param=%p", param);
 	if ((param == NULL) || (event_desc->event > WIFISTAD_EVENT_MAX)) {
 		AFLOG_ERR("prv_state_machine:: invalid input");
 		return;
@@ -451,8 +452,8 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 				wpa_manager_scan_async(prv_scan_started_callback, NULL);
 			}
 			else if (event == WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE) {
-				AFLOG_DEBUG3("prv_state_machine:: attempt to connect, scan_results = %p,(%s)",
-					   scan_results, (scan_results == NULL) ? "NULL" : scan_results);
+				AFLOG_DEBUG3("prv_state_machine:: attempt to connect, scan_results =(%s)",
+					         (scan_results == NULL) ? "NULL" : scan_results);
 				wifista_wpa_process_scan_results(s_wpa_state, scan_results);
 			}
 			else if (event == WIFISTAD_EVENT_WPA_CONNECTED) {
@@ -573,9 +574,8 @@ static int prv_set_event(wifistad_event_t event, void *param, struct timeval *ti
 	event_desc_t *event_desc = malloc(sizeof(*event_desc));
 
 
-	AFLOG_INFO("prv_set_event:: Setting "
-			   "event=%d(%s), s_evbase=%p, event_desc=%p",
-			   event, WIFISTAD_EVENT_STR[event], s_evbase, event_desc);
+	AFLOG_INFO("prv_set_event:: Setting event=%d - (%s) ",
+			   event, WIFISTAD_EVENT_STR[event]);
 
 	if (event_desc == NULL) {
 		AFLOG_ERR("prv_set_event:malloc failed");

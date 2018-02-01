@@ -136,7 +136,7 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
     int            status = AF_ATTR_STATUS_OK;
 
 	if (value == NULL) {
-		AFLOG_ERR("wifistad_attr_on_owner_set:: invalid value=%p", value);
+		AFLOG_ERR("wifistad_attr_on_owner_set:: invalid value=NULL");
 		return;
 	}
 

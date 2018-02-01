@@ -235,8 +235,7 @@ wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p)
 
 	// Nothing we could do, let the app itself timeout.
 	if (wifi_setup_p == NULL) {
-		AFLOG_ERR("wpa_handle_wifi_setup_request:: invalid input, setup_p=%p",
-				  wifi_setup_p);
+		AFLOG_ERR("wpa_handle_wifi_setup_request:: invalid input, setup_p=NULL");
 		return;
 	}
 
@@ -314,11 +313,11 @@ void wifista_wpa_auto_connect_AP(void *my_param,  	// input
 
 
 	if (my_param == NULL) {
-		AFLOG_ERR("wiifsta_wpa_connect_AP:: invalid input, my_param=%p", my_param);
+		AFLOG_ERR("wiifsta_wpa_connect_AP:: invalid input, my_param=NULL");
 		return;
 	}
 
-	AFLOG_INFO("wifista_wpa_connect_AP:: id=%d, result=%p", id, result);
+	AFLOG_INFO("wifista_wpa_connect_AP:: id=%d", id);
 	/* We are done trying to connect, when
      * 1. Connected, or
      * 2. No more AP to try
@@ -370,9 +369,9 @@ void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result
 		return;
 	}
 
-	AFLOG_INFO("wifista_process_scan_results:: wpa_state=%d (%s), scan_result_p=%p, who=%d",
+	AFLOG_INFO("wifista_process_scan_results:: wpa_state=%d (%s), who=%d",
 			   wpa_state, WPA_STATE_STR[wpa_state],
-			   scan_results_p, m->wifi_setup.who_init_setup);
+			   m->wifi_setup.who_init_setup);
 	if (m->wifi_setup.who_init_setup == INIT_NONE) {
 		// do nothing
 		wifista_ap_list_t *ap_list = wifista_get_ap_list();
@@ -412,7 +411,7 @@ void wifista_wpa_user_connect_AP(void *my_param,  // input
 
 
 	if (my_param == NULL) {
-		AFLOG_ERR("wiifsta_wpa_USER_connect_AP:: invalid input, my_param=%p", my_param);
+		AFLOG_ERR("wiifsta_wpa_USER_connect_AP:: invalid input, my_param=NULL");
 		return;
 	}
 
@@ -475,7 +474,7 @@ void wifistat_wpa_user_reconn(void *my_param, void *result)
 	wpa_manager_t   *m = wifista_get_wpa_mgr();
 
 	if (my_param == NULL) {
-		AFLOG_ERR("wifistat_wpa_user_reconn:: invalid input, my_param=%p", my_param);
+		AFLOG_ERR("wifistat_wpa_user_reconn:: invalid input, my_param=NULL");
 		return;
 	}
 

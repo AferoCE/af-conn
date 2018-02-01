@@ -237,7 +237,8 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
 
 
     if ((host == NULL) || (itf_string == NULL)) {
-        AFLOG_ERR("cm_echo_alive_check:: Invalid input, host=%p, itf_string=%p", host, itf_string);
+        AFLOG_ERR("cm_echo_alive_check:: Invalid input, host_NULL=%d, itf_string_NULL=%d",
+                  (host==NULL), (itf_string==NULL));
         return (-1);
     }
     memset(&hints, 0, sizeof(hints));

@@ -1122,7 +1122,7 @@ static void *prv_wpa_worker_loop(void *arg)
 
         result_param = op_desc.func(&op_desc);
 
-         AFLOG_INFO("prv_wpa_worker_loop::  IN LOOP, cb=%p, result_param=%p", op_desc.cb,
+         AFLOG_DEBUG2("prv_wpa_worker_loop::  IN LOOP, cb=%p, result_param=%p", op_desc.cb,
                     result_param);
         if (op_desc.cb) {
             op_desc.cb(op_desc.cb_param, result_param);
@@ -1454,8 +1454,7 @@ int wpa_manager_init(struct event_base *evbase,
 
 
     if (evbase == NULL) {
-        AFLOG_ERR("wap_manager_init::Invalid input:evbase=%p, wpa_event_cb_param=%p",
-                    evbase, wpa_event_cb_param);
+        AFLOG_ERR("wap_manager_init::Invalid input:evbase=NULL");
         return (res);
     }
 
@@ -1529,12 +1528,12 @@ void wpa_manager_dump()
 
     AFLOG_DEBUG1("s_wpa_manager:");
     AFLOG_DEBUG1("  started=%d", m->started);
-    AFLOG_DEBUG1("  evbase=%p",  m->evbase);
-    AFLOG_DEBUG1("  tm_event=%p", m->tm_event);
-    AFLOG_DEBUG1("  wpa_event=%p", m->wpa_event);
+    AFLOG_DEBUG2("  evbase=%p",  m->evbase);
+    AFLOG_DEBUG2("  tm_event=%p", m->tm_event);
+    AFLOG_DEBUG2("  wpa_event=%p", m->wpa_event);
     AFLOG_DEBUG1("  ctrl_iface_name=%s", (m->ctrl_iface_name == NULL) ? "NULL" : m->ctrl_iface_name);
-    AFLOG_DEBUG1("  ctrl_conn=%p", m->ctrl_conn);
-    AFLOG_DEBUG1("  mon_conn=%p", m->mon_conn);
+    AFLOG_DEBUG2("  ctrl_conn=%p", m->ctrl_conn);
+    AFLOG_DEBUG2("  mon_conn=%p", m->mon_conn);
     AFLOG_DEBUG1("  op_thread_created=%d", m->op_thread_created);
     AFLOG_DEBUG1("  op_cond_attr_created=%d", m->op_cond_attr_created);
     AFLOG_DEBUG1("  op_cond_created=%d", m->op_cond_created);
@@ -1542,10 +1541,10 @@ void wpa_manager_dump()
     AFLOG_DEBUG1("  current_op: ");
     AFLOG_DEBUG1("      op = %d, %s", m->current_op.op, s_wpa_op_names[m->current_op.op]);
     AFLOG_DEBUG1("      pending = %d", m->current_op.pending);
-    AFLOG_DEBUG1("      cb = %p", m->current_op.cb);
-    AFLOG_DEBUG1("      cb_param = %p", m->current_op.cb_param);
+    AFLOG_DEBUG2("      cb = %p", m->current_op.cb);
+    AFLOG_DEBUG2("      cb_param = %p", m->current_op.cb_param);
 
-    AFLOG_DEBUG1("  rpt_rssi_event = %p", m->rpt_rssi_event);
+    AFLOG_DEBUG2("  rpt_rssi_event = %p", m->rpt_rssi_event);
 
     AFLOG_DEBUG1("  assoc_info:");
     AFLOG_DEBUG1("      associated = %d", m->assoc_info.associated);

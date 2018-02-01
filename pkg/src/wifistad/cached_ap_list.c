@@ -187,7 +187,8 @@ int wifista_retrieve_APs (char *result, wifi_setup_mode_e  setup_mode)
     int8_t          idx = -1;
 
     if ((result == NULL) || (m == NULL)) {
-        AFLOG_ERR("wifista_retrieve_APs:: invalid input, result=%p, m=%p", result, m);
+        AFLOG_ERR("wifista_retrieve_APs:: invalid input, result_NULL=%d, m_NULL=%d",
+                  (result==NULL), (m==NULL));
         return (-1);
     }
 
