@@ -372,6 +372,17 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 			}
 			wifista_wpa_post_event(WPA_EVENT_ID_CFG_CHECK, NULL);
 		}
+		else if (s_wpa_state == WPA_STATE_CONNECTED) {
+			// we are connected to an AP, but during wifi setup, echo test failed.
+			// let's test to see if the network is reachable
+			if (m->wifi_steady_state == WIFI_STATE_ECHOFAILED) {
+				int8_t echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
+				if (echo_succ == 1) { // echo successful
+					// update the wifi_steady_state attribute
+					wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
+				}
+			}
+		}
     }
 
     return;
