@@ -77,7 +77,8 @@ wifista_store_wifi_cred(wifi_cred_t *cred_p)
 	AFLOG_DEBUG2("wifista_store_wifi_cred:: saving credentials for ssid=%s", cred_p->ssid);
 	fp = fopen(AFERO_WIFI_FILE, "w+");
 	if (fp == NULL) {
-		AFLOG_WARNING("wifista_store_wifi_cred:: Unable to open credential file for write");
+		AFLOG_WARNING("wifista_store_wifi_cred:: Open credential file for write failed, errno=%d(%s)",
+						errno, strerror(errno));
 		return;
 	}
 
