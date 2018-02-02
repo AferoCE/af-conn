@@ -380,6 +380,15 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 				if (echo_succ == 1) { // echo successful
 					// update the wifi_steady_state attribute
 					wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
+
+					m->wifi_setup.setup_state = m->wifi_steady_state;
+					AFLOG_DEBUG2("prv_wpa_periodic_check:: sending (WIFI_SETUP_STATE=%d)",
+								m->wifi_setup.setup_state);
+					af_attr_set(AF_ATTR_WIFISTAD_WIFI_SETUP_STATE,
+								(uint8_t *)&(m->wifi_setup.setup_state),
+								sizeof(m->wifi_setup.setup_state),
+								wifista_attr_on_set_finished,
+								NULL);
 				}
 			}
 		}
