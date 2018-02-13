@@ -1,9 +1,11 @@
-#  connectivity : WAN Daemon Subsystem
-#  Copyright (c) 2014-2016 Afero, Inc. All rights reserved.
+#  af-conn: WAN Daemon Subsystem
+#           wifistad daemon subsystem
+#           connmgr daemon subsystem
+#  Copyright (c) 2014-2018 Afero, Inc. All rights reserved.
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=connectivity
+PKG_NAME:=af-conn
 PKG_VERSION:=1.0
 PKG_RELEASE:=1
 
@@ -17,10 +19,10 @@ PKG_USE_MIPS16:=0
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
 
-define Package/connectivity
+define Package/af-conn
   SECTION:=net
   CATEGORY:=Network
-  TITLE:=Kiban connectivity manager
+  TITLE:=Kiban af-conn manager
   DEPENDS:=+libevent2 +libpthread +libpcap +librt +af-ipc +attrd +af-util +freed
   URL:=http://www.kibanlabs.com/
 endef
@@ -32,7 +34,7 @@ define Build/Compile
 		all install
 endef
 
-define Package/connectivity/install
+define Package/af-conn/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/wand $(1)/usr/bin/
@@ -76,4 +78,4 @@ define Build/Clean
 
 endef
 
-$(eval $(call BuildPackage,connectivity))
+$(eval $(call BuildPackage,af-conn))
