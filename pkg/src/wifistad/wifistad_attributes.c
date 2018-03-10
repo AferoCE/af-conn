@@ -33,6 +33,7 @@
 // timeout value for report to
 struct timeval   rpt_rssi_timeout = {10, 0};
 
+extern void  wifistad_close ();
 
 // on notification
 void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context)
@@ -112,6 +113,9 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 					sleep(2);
 					wpa_manager_remove_network_async(NULL, NULL, m->assoc_info.id);
 					sleep(2);
+					// let's shutdown this properly
+					wifistad_close ();
+
 					exit(0); /* exit so that the watcher can start it afresh */
 				}
 			}
