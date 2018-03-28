@@ -393,7 +393,7 @@ void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result
 		wifista_setup_send_rsp(&m->wifi_setup);
 
 		AFLOG_DEBUG2("wifista_wpa_process_scan_results: Done. RESET_WIFI_SETUP");
-		RESET_WIFI_SETUP(m);
+		RESET_WIFI_SETUP(m,0);
 	}
 
 	return;

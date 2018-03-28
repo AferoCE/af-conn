@@ -129,10 +129,10 @@ typedef struct {
 
 
 /* Macro to reset the wifi setup data structure */
-#define RESET_WIFI_SETUP(m)                                     \
+#define RESET_WIFI_SETUP(m,cache_state)                         \
 do {                                                            \
     (m)->wifi_setup.who_init_setup = INIT_NONE;                 \
-    (m)->wifi_setup.setup_state = WIFI_STATE_NOTCONNECTED;      \
+    if (!cache_state) (m)->wifi_setup.setup_state = WIFI_STATE_NOTCONNECTED; \
     (m)->wifi_setup.setup_event = 0;                            \
     (m)->wifi_setup.network_id = -1;                            \
     (m)->wifi_setup.data_p = NULL;                              \

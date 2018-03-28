@@ -278,7 +278,7 @@ static void prv_post_echo_check_processing(uint8_t  echo_succ)
 	if (m->wifi_setup.data_p != NULL) {
 		free(m->wifi_setup.data_p);
 	}
-	RESET_WIFI_SETUP(m);
+	RESET_WIFI_SETUP(m,1);
 
 	return;
 }
@@ -431,7 +431,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 					// commences when the user request for it.
 					state = WIFISTAD_STATE_SCANNING;
 					AFLOG_DEBUG2("prv_state_machine: reset_wifi_setup");
-					RESET_WIFI_SETUP(m);
+					RESET_WIFI_SETUP(m,0);
 
 					/* different scenarios:
 					 * reboot - we would want to reconnect via user provisioned data.
@@ -643,7 +643,7 @@ static void prv_handle_connecting_tmout (wpa_manager_t *m)
 	if (m->wifi_setup.data_p != NULL) {
 		free(m->wifi_setup.data_p);
 	}
-	RESET_WIFI_SETUP(m);
+	RESET_WIFI_SETUP(m,1);
 
 	// try to reconnecting back to previous one
 	// possible scenario: At reboot or daemon restart, connect failed, but no previous network id
@@ -978,7 +978,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 						m->wifi_setup.data_p = NULL;
 					}
 					AFLOG_INFO("prv_wpa_event_callback:: Done - RESET_WIFI_SETUP");
-					RESET_WIFI_SETUP(m);
+					RESET_WIFI_SETUP(m,1);
 
 					/* failed, revert to previous network */
 					if (m->assoc_info.id > 0) {
@@ -1071,7 +1071,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 					wifista_set_wifi_steady_state(WIFI_STATE_NOTCONNECTED);
 				}
 				AFLOG_DEBUG2("prv_pwa_event_callback:: RESET_WIFI_SETUP(m)");
-				RESET_WIFI_SETUP(m);
+				RESET_WIFI_SETUP(m,1);
 				memset(&m->assoc_info, 0, sizeof(wpa_sta_assoc_t));
 
 				prv_set_event(WIFISTAD_EVENT_WPA_TERMINATED, NULL, &zero_timeout);

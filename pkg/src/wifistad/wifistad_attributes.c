@@ -154,7 +154,7 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 			uint8_t           len = strlen(hub_wifi_cred->key);
 			if ((wifi_cred) && (len > 0) &&
 				(m->wifi_setup.who_init_setup != USER_REQUEST)) {
-				RESET_WIFI_SETUP(m);
+				RESET_WIFI_SETUP(m,0);
 				memset(wifi_cred, 0, sizeof(wifi_cred_t));
 				memcpy(wifi_cred->ssid, hub_wifi_cred->ssid, HUB_SSID_LEN);
 				memcpy(wifi_cred->key,  hub_wifi_cred->key, HUB_WIFI_CRED_LEN);
@@ -193,7 +193,7 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 					free (wifi_cred);
 					wifi_cred = NULL;
 				}
-				RESET_WIFI_SETUP(m);
+				RESET_WIFI_SETUP(m,1);
 			}
 			break;
 
