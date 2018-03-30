@@ -859,6 +859,38 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
                     }
                 }
             }
+            else if (h->nlmsg_type == RTM_NEWADDR) { // [HUB-813]
+				struct ifaddrmsg *ifa = (struct ifaddrmsg *) NLMSG_DATA(h);
+                struct rtattr *rth = IFA_RTA(ifa);
+                int       rtl = IFA_PAYLOAD(h);
+				uint8_t   found = 0;
+
+
+                memset(ifname, 0, sizeof(ifname));
+                while (rtl && RTA_OK(rth, rtl)) {
+				    AFLOG_DEBUG3("cm_on_recv_netlink_route_events:: rta_type=%d", rth->rta_type);
+                    if (rth->rta_type == IFA_LOCAL) {  // IFA_LOCAL == 2
+                        uint32_t ipaddr = htonl(*((uint32_t *)RTA_DATA(rth)));
+                        if_indextoname(ifa->ifa_index, ifname);
+                        AFLOG_DEBUG2("cm_on_recv_netlink_route_events::%s is now %d.%d.%d.%d\n", ifname,
+                               (ipaddr >> 24) & 0xff, (ipaddr >> 16) & 0xff,
+                               (ipaddr >> 8) & 0xff, ipaddr & 0xff);
+						found = 1;
+						break;
+                    }
+					rth = RTA_NEXT(rth, rtl);
+                }
+
+                AFLOG_DEBUG1("cm_on_recv_netlink_route_events::RTM_NEWADDR, ifname:%s", ifname);
+
+				if (found && ((net_conn_p = cm_find_monitored_net_obj(ifname)) != NULL)) {
+                    AFLOG_INFO("cm_on_recv_netlink_route_events::RTM_NEWADDR, call cm_netconn_up_detected:%s", ifname);
+                    cm_netconn_up_detected(net_conn_p);
+                }
+			}
+			else if (h->nlmsg_type == RTMGRP_IPV4_IFADDR) {
+                 AFLOG_INFO("cm_on_recv_netlink_route_events:: RTMGRP_IPV4_IFADDR");
+            }
         }
     }
 
@@ -984,6 +1016,14 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         else {
             net_conn_p->dev_link_status = NETCONN_STATUS_ITFDOWN_SX;
             net_conn_p->conn_active = 0;
+
+            // [HUB-813]
+            // conn_init_func failed due to IPADDR not assigned yet. Wait for two monitor
+            // timeout event (4 seconds), let's try init again in the cm_mon_tmout_handler().
+            //
+            // Note: using the idle_count to facility (recovery check) by setting the
+            //   idle_count to be 2 intervals less than CM_RECOVERY_ATTEMPT_INTERVALS.
+            net_conn_p->idle_count = (CONNMGR_DWD_INTERVALS + CM_RECOVERY_ATTEMPT_INTERVALS - 2);
         }
     }
     else {

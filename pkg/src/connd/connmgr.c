@@ -211,7 +211,7 @@ int main(int argc, char *argv[])
     /* open a second netlink socket to listen to NETLINK_ROUTE events - itf up*/
     net_link_route_fd = cm_open_netlink_socket(SOCK_RAW,
                            NETLINK_ROUTE,
-                           (RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR));
+                           (RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR | RTM_NEWADDR));
     if (net_link_route_fd < 0) {
         AFLOG_ERR("CONNMGR:: Unable to open socket for hotplug event");
         goto connmgr_exit;
