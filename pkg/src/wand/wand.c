@@ -824,7 +824,11 @@ static int wand_init(void)
     return 0;
 }
 
-uint32_t g_debugLevel = LOG_DEBUG2;
+#ifdef BUILD_TARGET_DEBUG
+uint32_t g_debugLevel = LOG_DEBUG3;
+#else
+uint32_t g_debugLevel = LOG_DEBUG1;
+#endif
 
 extern const char REVISION[];
 extern const char BUILD_DATE[];

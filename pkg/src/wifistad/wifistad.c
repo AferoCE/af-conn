@@ -64,8 +64,12 @@ extern int8_t cm_is_service_alive(const char *service,
 // IPC server for this daemon
 uint8_t				wifista_bootup = 1;
 af_ipcs_server_t	*g_wifi_sta_server = NULL;
-uint32_t			g_debugLevel = 2;
 
+#ifdef BUILD_TARGET_DEBUG
+uint32_t			g_debugLevel = 3;
+#else
+uint32_t			g_debugLevel = 1;
+#endif
 
 const char *WPA_STATE_STR[WPA_STATE_MAX] = {
 	"WPA STATE NOT READY",

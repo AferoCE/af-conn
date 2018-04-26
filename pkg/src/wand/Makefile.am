@@ -7,8 +7,14 @@ else
 wand_SOURCES = at_ELS61.c ril_ELS61.c wand.c net.c server.c
 endif
 
+if BUILD_TARGET_DEBUG
+CFLAGS_BUILD_TARGET = -DBUILD_TARGET_DEBUG
+else
+CFLAGS_BUILD_TARGET = -DBUILD_TARGET_RELEASE
+endif
+
 wand_LDADD = -laf_attr -laf_ipc -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt -lresolv
-wand_CFLAGS = -Wall -ggdb3
+wand_CFLAGS = -Wall $(CFLAGS_BUILD_TARGET)
 
 .PHONY : build_info.h
 $(wand_SOURCES) : build_info.h

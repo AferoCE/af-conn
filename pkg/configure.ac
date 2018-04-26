@@ -15,5 +15,6 @@ AC_CONFIG_FILES([
  src/connd/Makefile
 ])
 AM_CONDITIONAL([WAN_RIL_HL7xxx], [test ! x$WAN_RIL = xELS61])
+AM_CONDITIONAL([BUILD_TARGET_DEBUG], [test x$BUILD_TARGET = xdebug])
 LT_INIT
 AC_OUTPUT

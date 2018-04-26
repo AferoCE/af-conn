@@ -291,7 +291,7 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
         switch (iphdr->ip_p) {
             case IPPROTO_TCP:
                 tcphdr = (struct tcphdr *) packetptr;
-                AFLOG_DEBUG1("CAPTURED_PACKET:: dev:%s, TCP  %s:%d -> %s:%d\n",
+                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, TCP  %s:%d -> %s:%d\n",
                              ( (user == NULL) ? "Uknown" : (char *)user ),
                              srcip, ntohs(tcphdr->source),
                              dstip, ntohs(tcphdr->dest));
@@ -336,7 +336,7 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
                 icmphdr = (struct icmphdr *) packetptr;
                 memcpy(&id, (u_char *) icmphdr + 4, 2);
                 memcpy(&seq, (u_char *) icmphdr + 6, 2);
-                AFLOG_DEBUG1("dev:%s, ICMP (%s -> %s), Type:%d Code:%d ID:%d Seq:%d",
+                AFLOG_DEBUG2("dev:%s, ICMP (%s -> %s), Type:%d Code:%d ID:%d Seq:%d",
                              ( (user == NULL) ? "Uknown" : (char *)user ),
                              srcip, dstip, icmphdr->type, icmphdr->code, ntohs(id), ntohs(seq));
                 break;

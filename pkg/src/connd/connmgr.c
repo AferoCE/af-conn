@@ -73,8 +73,11 @@ uint8_t            attr_set_pending = 0;
 /* Points to the current interface that pass traffic */
 cm_conn_monitor_cb_t  *cm_itf_inuse_p = NULL;
 
+#ifdef BUILD_TARGET_DEBUG
+uint32_t            g_debugLevel = LOG_DEBUG2;
+#else
 uint32_t            g_debugLevel = LOG_DEBUG1;
-
+#endif
 
 /* data structure for managing network connection info */
 cm_conn_monitor_cb_t cm_monitored_net[CONNMGR_NUM_MONITORED_ITF];

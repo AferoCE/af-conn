@@ -12,7 +12,11 @@
 
 #include "af_log.h"
 
-int g_debug = 1;
+#ifdef BUILD_TARGET_DEBUG
+uint32_t g_debugLevel = 3;
+#else
+uint32_t g_debugLevel = 1;
+#endif
 
 #define BUF_SIZE 1024
 #define DEFAULT_WAIT_PERIOD 15

@@ -1,5 +1,11 @@
 AUTOMAKE_OPTIONS = subdir-objects
 bin_PROGRAMS = atcmd
 
+if BUILD_TARGET_DEBUG
+CFLAGS_BUILD_TARGET = -DBUILD_TARGET_DEBUG
+else
+CFLAGS_BUILD_TARGET = -DBUILD_TARGET_RELEASE
+endif
+
 atcmd_SOURCES = atcmd.c
-atcmd_CFLAGS = -Wall -ggdb -I../include
+atcmd_CFLAGS = -Wall -I../include $(CFLAGS_BUILD_TARGET)
