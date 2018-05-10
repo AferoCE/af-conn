@@ -807,40 +807,49 @@ static void *prv_op_configure_network(wpa_op_desc_t *op_desc)
         found_bssid = (id > 0);
     }
 
-	if (!found_ssid && !found_bssid) {
+    if (!found_ssid && !found_bssid) {
         AFLOG_DEBUG2("prv_op_configure_network::network not found, adding new network");
-		id = prv_send_req_add_network();
-		if (id < 0) {
-			rc = WPA_CONN_RESULT_NO_ID;
-			cfg_network_failed = 1;
+        id = prv_send_req_add_network();
+        if (id < 0) {
+            rc = WPA_CONN_RESULT_NO_ID;
+            cfg_network_failed = 1;
             AFLOG_DEBUG2("prv_op_configure_network:: ADD_NETWORK failed, network id=%d", id);
             goto configure_network_done;
-		}
-	}
+        }
+    }
 
-	if (!found_ssid) {
-		if (prv_send_req_set_network_param(id, "ssid", op_desc->func_params.configure_network_params.ssid, 1) < 0) {
-			rc = WPA_CONN_RESULT_INVALID_SSID;
+    if (!found_ssid) {
+        if (prv_send_req_set_network_param(id, "ssid", op_desc->func_params.configure_network_params.ssid, 1) < 0) {
+            rc = WPA_CONN_RESULT_INVALID_SSID;
             AFLOG_WARNING("prv_op_configure_network:: failed to set ssid");
             goto configure_network_done;
-		}
-	}
+        }
+    }
 
-	if (prv_send_req_set_network_param(id, "bssid", "any", 0) < 0) {
-		AFLOG_WARNING("prv_op_configure_network::failed to set network bssid");
-		rc = WPA_CONN_RESULT_NO_ID;
-		goto configure_network_done;
-	}
+    if (prv_send_req_set_network_param(id, "bssid", "any", 0) < 0) {
+        AFLOG_WARNING("prv_op_configure_network::failed to set network bssid");
+        rc = WPA_CONN_RESULT_NO_ID;
+        goto configure_network_done;
+    }
 
-	/* TBD - need to get security type? */
-	if (op_desc->func_params.configure_network_params.psk != NULL && *op_desc->func_params.configure_network_params.psk != '\0') {
-		if (prv_send_req_set_network_param(id, "psk", op_desc->func_params.configure_network_params.psk, 1) < 0) {
-			AFLOG_WARNING("prv_op_configure_network::failed to set network psk");
-			// cfg_network_failed = 1;
-			rc = WPA_CONN_RESULT_SET_PSK_FAILED;
-            goto configure_network_done;
-		}
-	}
+    /* TBD - need to get security type? */
+    if (op_desc->func_params.configure_network_params.psk != NULL) {
+        if (*op_desc->func_params.configure_network_params.psk != '\0') {
+            if (prv_send_req_set_network_param(id, "psk", op_desc->func_params.configure_network_params.psk, 1) < 0) {
+                AFLOG_WARNING("prv_op_configure_network::failed to set network psk");
+                // cfg_network_failed = 1;
+                rc = WPA_CONN_RESULT_SET_PSK_FAILED;
+                goto configure_network_done;
+            }
+        } else {
+            AFLOG_DEBUG1("prv_op_configure_network::connecting to open network");
+            if (prv_send_req_set_network_param(id, "key_mgmt", "NONE", 0) < 0) {
+                AFLOG_WARNING("prv_op_configure_network::failed to set key_mgmt to NONE");
+                rc = WPA_CONN_RESULT_SET_PSK_FAILED;
+                goto configure_network_done;
+            }
+        }
+    }
     else {
         AFLOG_WARNING("prv_op_configure_network::invalid network psk");
         rc = WPA_CONN_RESULT_SET_PSK_FAILED;

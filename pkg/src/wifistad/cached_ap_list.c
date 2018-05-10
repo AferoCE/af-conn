@@ -88,28 +88,39 @@ wifista_util_is_sta_connected_to_ap(char *ssid)
  * typically looks like the example below:
  * tok[3] = [WPA-PSK-TKIP][WPA2-PSK-CCMP][ESS]
  *
- * Note:  [ESS] has length of 5.  So, if the length of the string
- * is 5 or less, then we know it has no security capabilities.
+ * If we get a capability that starts with WEP or WPA we assume
+ * the access point has security
  */
 #define ESS_STR_LEN    5
 uint8_t
 wifista_is_AP_support_sec(char *capabilities)
 {
-    uint16_t     len = 0;
-
-
     if (capabilities == NULL) {
         return (0);
     }
 
-    AFLOG_DEBUG3("wifista_util_is_AP_support_sec:: cap=%s", capabilities);
-    len = strlen(capabilities);
-    if ((len > ESS_STR_LEN) && (strstr(capabilities, "ESS") != NULL) ) {
-        return (1);
+    char *c = capabilities;
+    while(*c) {
+        if (*c == '[') {
+            char *ce = c + 1;
+            while (*ce != ']' && *ce != '\0') {
+                ce++;
+            }
+            if (*ce == ']') {
+                *ce++ = '\0';
+            }
+            if (!strncmp(c + 1, "WEP", 3) || !strncmp(c + 1, "WPA", 3)) {
+                AFLOG_DEBUG3("capabilities=%s,s=1", capabilities);
+                return 1;
+            }
+            c = ce;
+        } else {
+            c++;
+        }
     }
-    else {
-        return (0);
-    }
+
+    AFLOG_DEBUG3("capabilities=%s,s=0", capabilities);
+    return (0);
 }
 
 
