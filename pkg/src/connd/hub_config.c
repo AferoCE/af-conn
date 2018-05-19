@@ -33,20 +33,20 @@ char *strcasestr(const char *haystack, const char *needle);
 
 
 /* default to production environment */
-uint8_t    is_env_on_prod = 1;   
+uint8_t    is_env_on_prod = 1;
 
 const char *conclave_service_host_p = PROD_CONCLAVE_HOST;
 const char *echo_service_host_p     = PROD_ECHO_HOST;
 
 
-/* 
- * Internal routine to read the service config file update 
- * the environment variables accordingly. 
- */ 
-static void 
+/*
+ * Internal routine to read the service config file update
+ * the environment variables accordingly.
+ */
+static void
 hub_config_set_service_hosts ()
 {
- 	FILE        *fp = NULL;
+	FILE        *fp = NULL;
     char        line[80];
 
 
@@ -57,7 +57,7 @@ hub_config_set_service_hosts ()
         return;
     }
 
- 	/* we know that the service file only contain one line */
+	/* we know that the service file only contain one line */
     while (fgets(line, sizeof(line), fp) != NULL) {
 		if (strcasestr(line, ".dev") != NULL) {
 		   conclave_service_host_p = DEV_CONCLAVE_HOST;
@@ -66,17 +66,17 @@ hub_config_set_service_hosts ()
            is_env_on_prod = 0;
 
 		   break;
-		} 
-   	}
-	
+		}
+	}
+
 	AFLOG_INFO("hub_config_service_host: echo=%s",
 				(echo_service_host_p == NULL) ? "" : echo_service_host_p);
 	AFLOG_INFO("hub_config_service_host: conclave=%s",
 				(conclave_service_host_p == NULL) ? "" : conclave_service_host_p);
-       		
+
 	/* The file exists */
 	fclose (fp);
-} 
+}
 
 
 /* hub_config_service_env_init

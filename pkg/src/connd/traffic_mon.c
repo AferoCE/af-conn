@@ -161,14 +161,14 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
              (netp >>24) & 0xFF, (netp >> 16) & 0xFF,  (netp >> 8) & 0xFF, (netp & 0xFF), mask_length
             );
     }
-    AFLOG_INFO("cm_conn_mon_init::dev=%s, filter used:%s", dev, pcap_filter);
+    AFLOG_INFO("cm_conn_mon_init:dev=%s,filter used=%s", dev, pcap_filter);
     if (pcap_compile(pcap_handle, &fp, pcap_filter, 0, PCAP_NETMASK_UNKNOWN) == -1) {
-        AFLOG_WARNING("cm_conn_mon_init::dev=%s:err=%s, Error calling pcap_compile", dev, pcap_geterr(pcap_handle));
+        AFLOG_WARNING("cm_conn_mon_init:dev=%s,err=%s:Error calling pcap_compile", dev, pcap_geterr(pcap_handle));
     } else {
         /* set the filter */
         if (pcap_setfilter(pcap_handle, &fp) == -1) {
             connmgr_close_pcap_session(conn_mon_p->my_idx);
-            AFLOG_ERR("cm_conn_mon_init::dev=%s:err=%s, Error setting pcap filter", dev, pcap_geterr(pcap_handle));
+            AFLOG_ERR("cm_conn_mon_init:dev=%s,err=%s:Error setting pcap filter", dev, pcap_geterr(pcap_handle));
             return (-1);
         }
     }
@@ -179,14 +179,14 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
         conn_mon_p->conn_mon_pcap_ev = event_new(CONNMGR_GET_EVBASE(), pcapfd, EV_READ | EV_PERSIST,
                                                  conn_mon_p->conn_pkt_capture_handler, (void *) conn_mon_p);
         if (conn_mon_p->conn_mon_pcap_ev == NULL) {
-            AFLOG_ERR("cm_conn_mon_init::dev:%s, create wlan_mon_event failed", dev);
+            AFLOG_ERR("cm_conn_mon_init:dev=%s:create wlan_mon_event failed", dev);
             connmgr_close_pcap_session(conn_mon_p->my_idx);
             return (-1);
         }
         event_add(conn_mon_p->conn_mon_pcap_ev, NULL);   // no timeout
     }
     else {
-        AFLOG_WARNING("cm_conn_mon_init::dev:%s, pkt_capture_handler=NULL. NO NETMON",
+        AFLOG_WARNING("cm_conn_mon_init:dev=%s:pkt_capture_handler=NULL. NO NETMON",
                       conn_mon_p->dev_name);
     }
 
@@ -194,7 +194,7 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
     get_itf_ipaddr(conn_mon_p->dev_name, AF_INET,
                    &conn_mon_p->ipaddr[0],
                    sizeof(conn_mon_p->ipaddr));
-    AFLOG_INFO("cm_conn_mon_init::dev=%s, ipaddr=%s", dev, conn_mon_p->ipaddr);
+    AFLOG_INFO("cm_conn_mon_init:dev=%s,ipaddr=%s:", dev, conn_mon_p->ipaddr);
 
     conn_mon_p->pcap_fd = pcapfd;
     conn_mon_p->pcap_handle = pcap_handle;
@@ -216,9 +216,7 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
         conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SU;
     }
 
-    //TODO-send notification, when to confirm echo from service?
-
-    AFLOG_INFO("cm_conn_mon_init::dev=%s, inuse=%s, link_dev_status=%d (%s)",
+    AFLOG_INFO("cm_conn_mon_init:dev=%s,inuse=%s,link_dev_status=(%d-%s)",
                dev,
                ((conn_mon_p == CM_GET_INUSE_NETCONN_CB()) ? "TRUE":"FALSE"),
                conn_mon_p->dev_link_status,
@@ -265,11 +263,11 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
     // If there is an ARP or RARP message from the wireless
     // intranet, do this mean the network wireless connection is working?
     if (type == ETHERTYPE_ARP) {/* handle arp packet */
-        AFLOG_DEBUG2("connmgr_handle_captured_packet:: got a ARP");
-    }
+        AFLOG_DEBUG3("connmgr_handle_captured_packet:: got a ARP");
+    } /* ignore */
     else if(type == ETHERTYPE_REVARP) {/* handle reverse arp packet */
-        AFLOG_DEBUG2("connmgr_handle_captured_packet:: got an REVARP");
-    }/* ignore */
+        AFLOG_DEBUG3("connmgr_handle_captured_packet:: got an REVARP");
+    } /* ignore */
     else if (type == ETHERTYPE_IP) {
         int header_size;
 
@@ -291,13 +289,14 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
         switch (iphdr->ip_p) {
             case IPPROTO_TCP:
                 tcphdr = (struct tcphdr *) packetptr;
-                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, TCP  %s:%d -> %s:%d\n",
-                             ( (user == NULL) ? "Uknown" : (char *)user ),
+                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, TCP  %s:%d -> %s:%d",
+                             ( (user == NULL) ? "Unknown" : (char *)user ),
                              srcip, ntohs(tcphdr->source),
                              dstip, ntohs(tcphdr->dest));
+
 #if 0
-                AFLOG_INFO("CAPTURED_PACKET:: %s\n", iphdrInfo);
-                AFLOG_INFO("CAPTUER_PACKET:: %c%c%c%c%c%c Seq: 0x%x Ack: 0x%x Win: 0x%x TcpLen: %d\n",
+                AFLOG_DEBUG3("CAPTURED_PACKET:: %s\n", iphdrInfo);
+                AFLOG_DEBUG3("CAPTURED_PACKET:: %c%c%c%c%c%c Seq: 0x%x Ack: 0x%x Win: 0x%x TcpLen: %d",
                        (tcphdr->urg ? 'U' : '*'),
                        (tcphdr->ack ? 'A' : '*'),
                        (tcphdr->psh ? 'P' : '*'),
@@ -307,11 +306,12 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
                        ntohl(tcphdr->seq), ntohl(tcphdr->ack_seq),
                        ntohs(tcphdr->window), 4 * tcphdr->doff);
 #endif
+
                 sport = ntohs(tcphdr->dest);
                 // header_size = 14 + ( 4 * iphdr->ip_hl) + tcphdr->doff*4;
                 header_size = tcphdr->doff*4;
                 if (sport == NAMESERVER_PORT) {
-                    AFLOG_INFO("TCP:: GOT DNS packet, header_size=%d, len=%d",
+                    AFLOG_DEBUG2("TCP:: GOT DNS packet, header_size=%d, len=%d",
                                header_size, iphdr->ip_len - header_size);
                     cm_extract_dns_rrec(packetptr + header_size, iphdr->ip_len - header_size, 0);
                 }
@@ -320,8 +320,8 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
             case IPPROTO_UDP:
                 udphdr = (struct udphdr *) packetptr;
                 sport = ntohs(udphdr->source);
-                AFLOG_DEBUG1("CAPTURED_PACKET:: dev:%s, UDP  %s:%d -> %s:%d\n",
-                             ( (user == NULL) ? "Uknown" : (char *)user ),
+                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, UDP  %s:%d -> %s:%d",
+                             ( (user == NULL) ? "Unknown" : (char *)user ),
                              srcip, sport,
                              dstip, ntohs(udphdr->dest));
                 header_size = sizeof (struct udphdr);
@@ -345,7 +345,7 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
     }
     else if (type == ETHERTYPE_IPV6 ) {
         AFLOG_DEBUG2("connmgr_handle_captured_packet:: captured IPv6 packet");
-    }
+    } /* ignored */
 
     return;
 }
@@ -361,7 +361,7 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
 
 
     if (arg == NULL) {
-        AFLOG_INFO("cm_handle_netitf_got_packet:: conn monitor cb is NULL");
+        AFLOG_ERR("cm_handle_netitf_got_packet:: conn monitor cb is NULL");
         return;
     }
     conn_mon_p = (cm_conn_monitor_cb_t *)arg;
@@ -400,13 +400,11 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
                 /* nothing to do */
                 return;
             }
-            AFLOG_INFO("cm_handle_netitf_got_packet:: pcap_dispatch return err (%s), cm_netconn_count=%d",
-                       pcap_geterr(conn_mon_p->pcap_handle), cm_netconn_count);
+            AFLOG_WARNING("cm_handle_netitf_got_packet:pcap_dispatch_err=(%s),cm_netconn_count=%d",
+                          pcap_geterr(conn_mon_p->pcap_handle), cm_netconn_count);
 
             cm_set_itf_down(conn_mon_p, NETCONN_STATUS_ITFDOWN_SU);
             connmgr_close_pcap_session(conn_mon_p->my_idx);
-
-            // TODO -- send notification
 
             /* "This" network interface just went down..... switch  */
             cm_check_update_inuse_netconn(NETCONN_STATUS_ITFDOWN_SU, conn_mon_p);
@@ -430,8 +428,8 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
                  * traffic from this connection.  Let's switch check to see if we
                  * should switch over to it
                  **/
-                AFLOG_INFO("cm_handle_netitf_got_packet:: dev=%s becomes active",
-                           conn_mon_p->dev_name);
+                AFLOG_DEBUG1("cm_handle_netitf_got_packet:dev=%s:packet detected on interface",
+                             conn_mon_p->dev_name);
 
                 cm_netconn_up_detected(conn_mon_p);
 
@@ -514,7 +512,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFDOWN_SX) ||
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFNOTSUPP_SX)) {
 
-                AFLOG_DEBUG1("cm_mon_tmout_handler:: itf=(%s), dev_link_status=%d(%s), nothing to do",
+                AFLOG_DEBUG1("cm_mon_tmout_handler:itf=(%s),dev_link_status=%d(%s):nothing to do",
                              conn_mon_p->dev_name,
                              conn_mon_p->dev_link_status,
                              NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
@@ -553,8 +551,6 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
                         /* Let's see if we need to switch to this network */
                         cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
-
-                        // TODO - notify status change
                     }
                 }
 
@@ -569,11 +565,9 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 // the interface is UP, but service FAILED
                 cm_set_itf_down(conn_mon_p, NETCONN_STATUS_ITFUP_SF);
 
-                // TODO - send status NOTify
-                AFLOG_INFO("cm_mon_tmout_handler:: Notify, dev=%s, link_status changed:(%d - %s)",
+                AFLOG_INFO("link_down:device=%s,old_status=(%d-%s),new_status=(%d-%s):",
                            conn_mon_p->dev_name,
-                           old_link_status, NETCONN_STATUS_STR[old_link_status]);
-                AFLOG_INFO("cm_mon_tmout_handler::     -> (%d, %s)",
+                           old_link_status, NETCONN_STATUS_STR[old_link_status],
                            conn_mon_p->dev_link_status, NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
 
                 if (conn_mon_p == CM_GET_INUSE_NETCONN_CB()) {
@@ -600,8 +594,6 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                             AFLOG_DEBUG1("cm_mon_tmout_handler:: dev=%s, link becomes active",
                                          conn_mon_p->dev_name);
                             cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SU);
-
-                            // TODO - send status notification
                         }
 
                         if ((conn_mon_p->conn_timer_event) && (prev_active==0)) {
@@ -620,8 +612,6 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
                             /* Let's see if we need to switch to this network */
                             cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
-
-                            // TODO - send status notification
                         }
                         else {
                             if (conn_mon_p->conn_active) {
@@ -632,10 +622,9 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                         }
 
                         if (old_link_status != conn_mon_p->dev_link_status) {
-                            AFLOG_INFO("cm_mon_tmout_handler:: Notify, dev=%s, link_status changed:(%d - %s)",
+                            AFLOG_INFO("link_up:device=%s,old_status=(%d-%s),new_status=(%d-%s):",
                                        conn_mon_p->dev_name,
-                                       old_link_status, NETCONN_STATUS_STR[old_link_status]);
-                            AFLOG_INFO("cm_mon_tmout_handler::     -> (%d, %s)",
+                                       old_link_status, NETCONN_STATUS_STR[old_link_status],
                                        conn_mon_p->dev_link_status, NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
                         }
 
@@ -647,7 +636,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
     }  // event == EV_TIMEOUT
     else  {
-        AFLOG_WARNING("cm_mon_tmout_handler:: event not handled");
+        AFLOG_WARNING("cm_mon_tmout_handler:event=%d:event not handled", events);
     }
 
     return;
@@ -655,8 +644,8 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
 
 /*
- * connmgr_close_wlan_pcap_session
- *  - close the wlan pcap session
+ * connmgr_close_pcap_session
+ *  - close a pcap session
  */
 void connmgr_close_pcap_session(uint8_t idx)
 {
@@ -716,7 +705,7 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
     // OK - this should contains the uevent that we are interested in
     switch (parse_uevent.iAction) {
         case CM_UEVENT_ACTION_ADD:
-            AFLOG_DEBUG1("cm_on_recv_hotplug_events:: receive ADD uevent for dev:(%s, active=%d, link_status=%d)",
+            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=ADD,device=%s,active=%d,link_status=%d:interface added event",
                          net_conn_p->dev_name,
                          net_conn_p->conn_active,
                          net_conn_p->dev_link_status);
@@ -729,7 +718,7 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
             break;
 
         case CM_UEVENT_ACTION_REMOVE:
-            AFLOG_DEBUG1("cm_on_recv_hotplug_events:: REMOVE dev:%s, active=%d, # monitored:%d",
+            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=REMOVE,device=%s,active=%d,num_monitored=%d:interface removed event",
                          net_conn_p->dev_name,
                          net_conn_p->conn_active,
                          cm_netconn_count);
@@ -743,11 +732,9 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
                 /* close the packet monitor session if it is open */
                 connmgr_close_pcap_session(net_conn_p->my_idx);
 
-                // TODO - send notifcation
-                AFLOG_INFO("cm_on_recv_hotplug_events:: Notify, dev=%s, link_status changed:(%d - %s)",
+                AFLOG_INFO("link_down_hotplug:device=%s,old_link_status=(%d-%s),new_link_status=(%d-%s)",
                            net_conn_p->dev_name,
-                           old_link_status, NETCONN_STATUS_STR[old_link_status]);
-                AFLOG_INFO("cm_on_recv_hotplug_events::     -> (%d, %s)",
+                           old_link_status, NETCONN_STATUS_STR[old_link_status],
                            net_conn_p->dev_link_status, NETCONN_STATUS_STR[net_conn_p->dev_link_status]);
 
                 cm_check_update_inuse_netconn(NETCONN_STATUS_ITFDOWN_SU, net_conn_p);
@@ -755,7 +742,7 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
             break;
 
         case CM_UEVENT_ACTION_CHANGE:
-            AFLOG_WARNING("cm_on_recv_hotplug_events::CHANGE uevent for dev:(%s), NOT HANDLED",
+            AFLOG_WARNING("cm_on_recv_hotplug_events_change:device=%s:CHANGE uevent NOT HANDLED",
                           net_conn_p->dev_name);
             break;
 
@@ -850,10 +837,8 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
                         /* close the packet monitor session if it is open */
                         connmgr_close_pcap_session(net_conn_p->my_idx);
 
-                        AFLOG_INFO("cm_on_recv_netlink_route_events:: Notify:%s status changed (Interface DOWN, Serivce Unknown)",
+                        AFLOG_INFO("cm_on_recv_netlink_route_events:: Notify:%s status changed (Interface DOWN, Service Unknown)",
                                    ifname);
-
-                        // TODO - sent the actual notification
 
                         cm_check_update_inuse_netconn(NETCONN_STATUS_ITFDOWN_SU, net_conn_p);
                     }
@@ -893,8 +878,6 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
             }
         }
     }
-
-    return;
 }
 
 
@@ -942,8 +925,6 @@ void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
             }
         }
     }
-
-    return;
 }
 
 
@@ -970,8 +951,6 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
         cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
     }
-
-    return;
 }
 
 
@@ -984,9 +963,10 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
     if (net_conn_p == NULL)
         return;
 
-    AFLOG_INFO("cm_netconn_up_detected:: dev=(%s, active=%d, link_status=%d, pcap_handle=%p)",
-               net_conn_p->dev_name, net_conn_p->conn_active,
-               net_conn_p->dev_link_status, net_conn_p->pcap_handle);
+    AFLOG_DEBUG1("cm_netconn_up_detected:: dev=%s,active=%d,link_status=%d,pcap_handle=%p)",
+                 net_conn_p->dev_name, net_conn_p->conn_active,
+                 net_conn_p->dev_link_status, net_conn_p->pcap_handle);
+
     old_status = net_conn_p->dev_link_status;
 
     /* When this network went down or became dead, the device is generally
@@ -1053,12 +1033,11 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         evtimer_add(net_conn_p->conn_timer_event, &net_conn_p->mon_tmout_val);
     }
 
-    AFLOG_INFO("cm_netconn_up_detected:: Notify: dev=(%s, active=%d), status changed %d->%d(%s)",
+    AFLOG_INFO("link_up:device=%s,conn_active=%d,old_status=(%d-%s),new_status=(%d-%s)",
                net_conn_p->dev_name, net_conn_p->conn_active,
-               old_status,
+               old_status, NETCONN_STATUS_STR[old_status],
                net_conn_p->dev_link_status, NETCONN_STATUS_STR[net_conn_p->dev_link_status]);
 
-    // TODO - sent the actual notification
     if (old_status != net_conn_p->dev_link_status) {
         //cm_netconn_status_notify();
     }
@@ -1074,6 +1053,4 @@ netconn_done:
         (old_status == NETCONN_STATUS_ITFDOWN_SX)) {
         cm_dns_reset_wl_entries();
     }
-
-    return;
 }

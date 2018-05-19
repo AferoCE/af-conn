@@ -1,8 +1,8 @@
 /*
 * hub_config.h
 *
-* This contains the definition and implementation of utilities about 
-* the hub(bento) configuration (required by daemon managing connectivitiy).
+* This contains the definition and implementation of utilities about
+* the hub(bento) configuration (required by daemon managing connectivity).
 *
 * Copyright (c) 2016-present, Afero Inc. All rights reserved.
 */
@@ -23,24 +23,24 @@
 #define ECHO_SERVICE_PORT          80
 
 
-/* Depending on the environment, the host pointers  
- * either points to their production hosts or the 
+/* Depending on the environment, the host pointers
+ * either points to their production hosts or the
  * dev hosts.
- */ 
+ */
 extern const char *conclave_service_host_p;
 extern const char *echo_service_host_p;
 
 
-/* based on the service file - this ether set to  
- *  0 = NOT on prod environment, on dev environment  
- *  1 = it is on prod environment 
+/* based on the service file - this ether set to
+ *  0 = NOT on prod environment, on dev environment
+ *  1 = it is on prod environment
  */
 extern uint8_t    is_env_on_prod;
 
 
 
 /* API to set the above environment based variables */
-extern 
+extern
 void hub_config_service_env_init ();
 
 

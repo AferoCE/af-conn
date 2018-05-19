@@ -350,6 +350,7 @@ cm_util_parse_uevent(char *recv_buffer, int  len, cm_parse_uevent_t *parse_ueven
 }
 
 
+/* TODO make this asynchronous */
 /*
  * send an echo to echo service (echo.dev.afero.io), and wait
  * for an response back.  The service lives behind the load balancer,
@@ -439,7 +440,7 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
 				inet_ntop(ai->ai_family, AF_INET == ai->ai_addr->sa_family ?
 						(void *) (&(((struct sockaddr_in *) ai->ai_addr)->sin_addr)) :
 						(void *) (&(((struct sockaddr_in6 *) ai->ai_addr)->sin6_addr)), s, sizeof(s));
-				AFLOG_DEBUG2("cm_echo_alive_check::dev=%s, connect() failed to (%s) for socket %d",
+				AFLOG_DEBUG1("cm_echo_alive_check::dev=%s, connect() failed to (%s) for socket %d",
 							itf_string, s, fd);
 				close(fd);
 				fd = -1;
@@ -456,7 +457,7 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
 				// check if the socket is ready after the specified time
 				result = select(fd+1, NULL, &write_fd, NULL, &ctimeout);
 				if (result > 0) {
-					AFLOG_DEBUG1("cm_echo_alive_check::dev=%s, ready to write, result=%d", itf_string, result);
+					AFLOG_DEBUG2("cm_echo_alive_check::dev=%s, ready to write, result=%d", itf_string, result);
 					flags = fcntl(fd, F_GETFL, 0);
 					flags &= (~O_NONBLOCK);
 					fcntl(fd, F_SETFL, flags);
@@ -512,7 +513,7 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
 
         /** send the echo request with 1 byte of data */
         result = send(fd, (void *) &packet, 1, 0);
-        AFLOG_DEBUG1("cm_echo_alive_check:: sent: 1 byte packet (val=%0X) to %s from %s, result=%d",
+        AFLOG_DEBUG2("cm_echo_alive_check:: sent: 1 byte packet (val=%0X) to %s from %s, result=%d",
                      packet, s, itf_string, result);
         if (result < 0) {
             goto done;
@@ -522,8 +523,7 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
         memset(buffer, 0, sizeof(buffer));
         result = recv(fd, buffer, sizeof(buffer), 0);
         if (result != 1) {   // should be 1 byte
-            AFLOG_DEBUG1("cm_echo_alive_check:: recv: len=%d, echo val=%0X", result, buffer[0]);
-            AFLOG_DEBUG1("cm_echo_alive_check:: recv: err=%d, %s", errno,strerror(errno));
+            AFLOG_DEBUG1("cm_echo_alive_check_recv:len=%d,echo_val=%0X,err=%d,err_str=%s", result, buffer[0], errno, strerror(errno));
             result = 0;
         }
     }
@@ -537,7 +537,7 @@ int8_t cm_echo_alive_check (const char   *host,  char *itf_string) {
 			freeaddrinfo(res);
 		}
 
-        AFLOG_INFO("cm_echo_alive_check:: on interface (%s): echo %s from server (%s)",
+        AFLOG_DEBUG1("cm_echo_alive_check:: on interface (%s): echo %s from server (%s)",
 				   itf_string,
                    ((result == 1) ? "ALIVE" : "FAILED"), s);
 

@@ -66,9 +66,9 @@ uint8_t				wifista_bootup = 1;
 af_ipcs_server_t	*g_wifi_sta_server = NULL;
 
 #ifdef BUILD_TARGET_DEBUG
-uint32_t			g_debugLevel = 3;
+uint32_t			g_debugLevel = LOG_DEBUG1;
 #else
-uint32_t			g_debugLevel = 1;
+uint32_t			g_debugLevel = LOG_DEBUG1;
 #endif
 
 const char *WPA_STATE_STR[WPA_STATE_MAX] = {
@@ -411,8 +411,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 	wifistad_event_t	event;
 
 
-	AFLOG_INFO("prv_state_machine:: events=%d", events);
-	AFLOG_DEBUG2("                    param=%p", param);
+	AFLOG_DEBUG2("prv_state_machine:: events=%d,param=%p", events, param);
 	if ((param == NULL) || (event_desc->event > WIFISTAD_EVENT_MAX)) {
 		AFLOG_ERR("prv_state_machine:: invalid input");
 		return;
@@ -421,9 +420,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 	event = event_desc->event;
 	wpa_manager_t *m = wifista_get_wpa_mgr();
 
-	AFLOG_INFO("> STATE (%d - %s) EVENT (%d - %s)",
-			   state, WIFISTAD_STATE_STR[state],
-			   event, WIFISTAD_EVENT_STR[event]);
+	wifistad_state_t old_state = state;
 
 	EXPIRE_CONN_TIMER(event);
 
@@ -442,7 +439,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 					 * restart - wifi should be already connected and association
 					 * should be in place.  No need to reconnect.
 					 **/
-                    if (prv_attempt_conn_with_config() > 0) {
+					if (prv_attempt_conn_with_config() > 0) {
 						state = WIFISTAD_STATE_WPA_CONNECTING;
 					}
 					else {
@@ -471,7 +468,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 
 		case WIFISTAD_STATE_SCANNING:
 			if (event == WIFISTAD_EVENT_SCAN) {
-				AFLOG_INFO("prv_state_machine::%s initiates the scanning process",
+				AFLOG_INFO("prv_state_machine:who_init_setup=%s:scanning process initiated",
 						   (m->wifi_setup.who_init_setup == USER_REQUEST) ? "USER":"SYS");
 				wpa_manager_scan_async(prv_scan_started_callback, NULL);
 			}
@@ -528,8 +525,8 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 					break;
 
 				case WIFISTAD_EVENT_SCAN:
-					AFLOG_INFO("prv_state_machine::%s initiate the scanning process",
-							   (m->wifi_setup.who_init_setup == USER_REQUEST) ? "USER":"SYS");
+					AFLOG_INFO("prv_state_machine:who_init_setup=%s:scanning process initiated",
+						   (m->wifi_setup.who_init_setup == USER_REQUEST) ? "USER":"SYS");
 					wpa_manager_scan_async(prv_scan_started_callback, NULL);
 					break;
 
@@ -561,14 +558,14 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 			break;
 
 		default:
-			AFLOG_INFO("prv_state_machine:: unsupport state=%d", state);
+			AFLOG_WARNING("prv_state_machine::unsupported state=%d", state);
 			break;
 	}
 
 	// independent of the state -- we lost wifi
 	if ((event == WIFISTAD_EVENT_WPA_TERMINATED) && (state != WIFISTAD_STATE_UNINITIALIZED)) {
 		state = WIFISTAD_STATE_UNINITIALIZED;
-		AFLOG_INFO("WIFISTAD:: Connection to wpa_supplicant lost - trying to reconnect");
+		AFLOG_INFO("wpa_supplicant_lost::Connection to wpa_supplicant lost - trying to reconnect");
 
 		if (s_wpa_state == WPA_STATE_NOT_READY) { // wpa is not doing anything
 			wpa_manager_destroy();
@@ -585,7 +582,10 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 
 	free(event_desc);
 
-	AFLOG_INFO("< STATE = (%d, %s)", state, WIFISTAD_STATE_STR[state]);
+	AFLOG_INFO("state_changed:old_state=(%d-%s),new_state=(%d-%s),event=(%d-%s)",
+			   old_state, WIFISTAD_STATE_STR[old_state],
+			   state, WIFISTAD_STATE_STR[state],
+			   event, WIFISTAD_EVENT_STR[event]);
 }
 
 

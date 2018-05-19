@@ -74,7 +74,7 @@ uint8_t            attr_set_pending = 0;
 cm_conn_monitor_cb_t  *cm_itf_inuse_p = NULL;
 
 #ifdef BUILD_TARGET_DEBUG
-uint32_t            g_debugLevel = LOG_DEBUG2;
+uint32_t            g_debugLevel = LOG_DEBUG1;
 #else
 uint32_t            g_debugLevel = LOG_DEBUG1;
 #endif

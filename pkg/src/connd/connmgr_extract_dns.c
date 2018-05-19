@@ -123,7 +123,7 @@ find_dns_sname_in_whitelist(unsigned char *name)
     if (name == NULL) {
         return (NULL);
     }
-    AFLOG_DEBUG1("find_dns_sname_in_whitelist:: name=%s", name);
+    AFLOG_DEBUG2("find_dns_sname_in_whitelist:: name=%s", name);
 
     for (i=0; i<CM_WL_MAX_NUM_ENTRIES; i++) {
         if ((af_wl_dns_db.wl_entries[i].service_name == NULL) ||
@@ -306,7 +306,7 @@ cm_read_dns_rec_name(unsigned char *reader,   // ptr to current position
                 len++;
             }
             else {
-                AFLOG_WARNING("cm_read_dns_rec_name:: name is trauncated");
+                AFLOG_WARNING("cm_read_dns_rec_name:: name is truncated");
             }
         }
 
@@ -438,7 +438,7 @@ cm_extract_dns_rrec(register const u_char *bp, u_int length, int is_mdns)
         answers[i].resource = (struct R_DATA *) (data);
 
         if (answers[i].resource == NULL) {
-            AFLOG_ERR("dns_extract_dns_rrec:: ANSWER: No resource in record");
+            AFLOG_WARNING("dns_extract_dns_rrec:: ANSWER: No resource in record");
             continue;   // bad data, skip this one
         }
         AFLOG_DEBUG2("dns_extract_dns_rrec:: ANSWER: i=%d, name=%s type=%d, _class=%d, ttl=%d, data_len=%d",
@@ -468,7 +468,7 @@ cm_extract_dns_rrec(register const u_char *bp, u_int length, int is_mdns)
             cm_dns_ip_rec_t iprec;
             ipaddr = *(uint32_t *)data;
             addr.sin_addr.s_addr = ipaddr; //working without ntohl
-            AFLOG_DEBUG1("dns_extract_dns_rrec:: ANSWER: has IPv4 address : %d (%s), name=%s",
+            AFLOG_DEBUG2("dns_extract_dns_rrec:: ANSWER: has IPv4 address : %d (%s), name=%s",
                            ipaddr, inet_ntoa(addr.sin_addr), answers[i].name);
 
             memset(&iprec, 0, sizeof(cm_dns_ip_rec_t));
@@ -492,7 +492,7 @@ cm_extract_dns_rrec(register const u_char *bp, u_int length, int is_mdns)
             data = data + data_len;
         }
         else if (type == T_AAAA) {
-            AFLOG_DEBUG1("cm_extract_dns_rrec:: ANSWER: IPv6 address");
+            AFLOG_DEBUG2("cm_extract_dns_rrec:: ANSWER: IPv6 address");
             // just copy the data over for now
             //af_log_buffer(1, "IPV6::", data, ntohs(answers[i].resource->data_len));
             answers[i].rdata = (unsigned char *) malloc(ntohs(answers[i].resource->data_len));
@@ -649,8 +649,7 @@ cm_dns_log_wl_entry(cm_wl_entry_t  *wl_entry_p)
 
 
     if (wl_entry_p != NULL) {
-        AFLOG_INFO("cm_wl_entry:: service name: %s", wl_entry_p->service_name);
-        AFLOG_INFO("cm_wl_entry:: has (%d) of IP records:", wl_entry_p->num_iprec);
+        AFLOG_INFO("cm_wl_entry:service name=%s:num_ip_records=%d", wl_entry_p->service_name, wl_entry_p->num_iprec);
 
         while ((count < wl_entry_p->num_iprec) && (i < CM_DN_MAX_IPADDR)) {
             if ( wl_entry_p->ip_rec[count].inuse == 1) {
@@ -662,14 +661,20 @@ cm_dns_log_wl_entry(cm_wl_entry_t  *wl_entry_p)
                 ctime_r(&wl_entry_p->ip_rec[count].expired_time, expired_buf);
 
                 addr.sin_addr.s_addr = wl_entry_p->ip_rec[count].ip_addr;
-                AFLOG_INFO("cm_wl_entry::   ip=%s, updated_time=%d(%s), ttl=%d %s %s",
-                           inet_ntoa(addr.sin_addr),
-                           (int) (wl_entry_p->ip_rec[count].updated_time),
-                           upt_buf,
-                           wl_entry_p->ip_rec[count].ttl,
-                           ((wl_entry_p->ip_rec[count].ttl == CM_DNS_IP_TTL_EXPIRED) ? ", EXPIRED at" : ""),
-                           ( (wl_entry_p->ip_rec[count].expired_time == 0) ? "" : expired_buf)
-                         );
+                if (wl_entry_p->ip_rec[count].ttl == CM_DNS_IP_TTL_EXPIRED) {
+                    AFLOG_INFO("cm_wl_entry:ip=%s,updated_time=%d(%s),ttl=%d,expired_at=%s",
+                               inet_ntoa(addr.sin_addr),
+                               (int) (wl_entry_p->ip_rec[count].updated_time),
+                               upt_buf,
+                               wl_entry_p->ip_rec[count].ttl,
+                               ((wl_entry_p->ip_rec[count].expired_time == 0) ? "" : expired_buf));
+                } else {
+                    AFLOG_INFO("cm_wl_entry:ip=%s,updated_time=%d(%s),ttl=%d",
+                               inet_ntoa(addr.sin_addr),
+                               (int) (wl_entry_p->ip_rec[count].updated_time),
+                               upt_buf,
+                               wl_entry_p->ip_rec[count].ttl);
+                }
                 count ++;
             }
 
@@ -697,11 +702,11 @@ cm_dns_expire_wl_ip(cm_wl_entry_t  *wl_dn_entry_p)
     struct sockaddr_in  addr;
 
     if (wl_dn_entry_p == NULL) {
-        AFLOG_INFO("cm_dns_expire_wl_ip:: Invalid DN whitelist entry");
+        AFLOG_WARNING("cm_dns_expire_wl_ip:: Invalid DN whitelist entry");
         return;
     }
 
-    AFLOG_DEBUG1("cm_dns_expire_wl_ip:: service=%s, check for expired entry",
+    AFLOG_DEBUG1("cm_dns_expire_wl_ip:service=%s:check for expired entry",
                  wl_dn_entry_p->service_name);
     for (i=0; i<CM_DN_MAX_IPADDR; i++) {
         // the IP entry is inuse, and not expired, then we check to see
@@ -726,21 +731,21 @@ cm_dns_expire_wl_ip(cm_wl_entry_t  *wl_dn_entry_p)
                 wl_dn_entry_p->ip_rec[i].ttl = CM_DNS_IP_TTL_EXPIRED;
                 wl_dn_entry_p->ip_rec[i].expired_time = time(NULL);
 
-                AFLOG_INFO("cm_dns_expire_wl_ip:: service=%s, ip=(%d - %s), EXPIRED",
-                           wl_dn_entry_p->service_name,
-                           wl_dn_entry_p->ip_rec[i].ip_addr,
-                           inet_ntoa(addr.sin_addr));
+                AFLOG_DEBUG1("cm_dns_expire_wl_ip:: service=%s, ip=(%d - %s), EXPIRED",
+                             wl_dn_entry_p->service_name,
+                             wl_dn_entry_p->ip_rec[i].ip_addr,
+                             inet_ntoa(addr.sin_addr));
             }
         }
     }
-        // this is not the most efficient way, but it is sufficient
-        // now let's expunge the expired IP address (i.e delete the
-        // FW rules and remove the list from this list
-        // Rule to expunge:
-        // 1.  Uses the expired_time, calculate the time passed between
-        //     now and the marked expired_time.  if it is greater than
-        //     3600sec or an hour, then this means this is no longer in use
-        //     and we can remove it.
+    // this is not the most efficient way, but it is sufficient
+    // now let's expunge the expired IP address (i.e delete the
+    // FW rules and remove the list from this list
+    // Rule to expunge:
+    // 1.  Uses the expired_time, calculate the time passed between
+    //     now and the marked expired_time.  if it is greater than
+    //     3600sec or an hour, then this means this is no longer in use
+    //     and we can remove it.
     for (i=0; i<CM_DN_MAX_IPADDR; i++) {
         if ((wl_dn_entry_p->ip_rec[i].inuse == 1) &&
             (wl_dn_entry_p->ip_rec[i].ttl == CM_DNS_IP_TTL_EXPIRED)) {
@@ -751,10 +756,10 @@ cm_dns_expire_wl_ip(cm_wl_entry_t  *wl_dn_entry_p)
                 addr.sin_addr.s_addr = wl_dn_entry_p->ip_rec[i].ip_addr;
 
                 // remove the forwarding FW rule here
-                AFLOG_INFO("cm_dns_expire_wl_ip:: service=%s, ip=(%d - %s), EXPUNGED",
-                           wl_dn_entry_p->service_name,
-                           wl_dn_entry_p->ip_rec[i].ip_addr,
-                           inet_ntoa(addr.sin_addr));
+                AFLOG_DEBUG1("cm_dns_expire_wl_ip:service=%s,ip=(%d-%s):ip address expired and removed",
+                             wl_dn_entry_p->service_name,
+                             wl_dn_entry_p->ip_rec[i].ip_addr,
+                             inet_ntoa(addr.sin_addr));
 
                 af_util_system("/usr/bin/fwcfg del %s %s",
                                inet_ntoa(addr.sin_addr),
@@ -833,7 +838,7 @@ int cm_manage_dns_wl_ip_list(cm_wl_entry_t      *wl_dn_entry_p,
         memset(buf, 0, sizeof(buf));
         ctime_r(&iprec_p->updated_time, buf);
         addr.sin_addr.s_addr = iprec_p->ip_addr;
-        AFLOG_DEBUG1("cm_manage_dns_wl_ip_list::** UPDATED IP **, addr=%s, ttl=%d, %d(%s)",
+        AFLOG_DEBUG1("cm_manage_dns_wl_ip_list:addr=%s,ttl=%d,time=%d(%s):updated ip record",
                      inet_ntoa(addr.sin_addr), iprec_p->ttl,
                      (int) iprec_p->updated_time, buf);
 
@@ -859,7 +864,7 @@ int cm_manage_dns_wl_ip_list(cm_wl_entry_t      *wl_dn_entry_p,
             memset(buf, 0, sizeof(buf));
             ctime_r(&iprec_p->updated_time, buf);
 
-            AFLOG_DEBUG1("cm_manage_dns_wl_ip_list::ADDED IP and FW, addr=%s, ttl=%d, %d(%s)",
+            AFLOG_DEBUG1("cm_manage_dns_wl_ip_list:addr=%s,ttl=%d,time=%d(%s):added ip record",
                          inet_ntoa(addr.sin_addr), iprec_p->ttl,
                          (int) iprec_p->updated_time, buf);
 
