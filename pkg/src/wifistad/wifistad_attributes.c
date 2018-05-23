@@ -351,16 +351,6 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 			}
 			break;
 
-		case AF_ATTR_WIFISTAD_WIFI_HIDDEN_SSID: {
-				/*  Flag indicating whether the SSID is broadcast or not.
-				 * 0 - SSID is broadcast
-				 * 1 - SSID is hidden
-				 */
-				uint8_t  value = 0;
-				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
-			}
-			break;
-
 		default:
 			af_attr_send_get_response(AF_ATTR_STATUS_ATTR_ID_NOT_FOUND, getId, (uint8_t *)"", 0);
 			break;
