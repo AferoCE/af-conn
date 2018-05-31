@@ -899,8 +899,10 @@ configure_network_done:
 	}
 	else {
 		// if failed for any reason, let's delete the added network
-		if ((rc < WPA_CONN_RESULT_INIT) && (id > 0)) {
-			prv_send_req_remove_network(id);
+		if (rc < WPA_CONN_RESULT_INIT) {
+			if (id > 0) {
+				prv_send_req_remove_network(id);
+			}
 			return (void *)rc;
 		}
 		else {
