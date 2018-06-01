@@ -420,8 +420,13 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
                          conn_mon_p->conn_active,
                          conn_mon_p->dev_link_status);
 
-            /* This network connection is happy -- reset this network's idle_count */
-            conn_mon_p->idle_count = 0;
+            /* Fix for HUB-904. If we're connected to an active portal, we could get traffic */
+            /* back during the ping "probationary period". If we do, we should ignore this   */
+            /* traffic because it could be fake traffic from the active portal.              */
+            /* If this network connection is happy reset its idle_count */
+            if (conn_mon_p->idle_count < CONNMGR_DWD_CHECK_INTERVALS) {
+                conn_mon_p->idle_count = 0;
+            }
 
             if (conn_mon_p->conn_active == 0) {
                 /* This interface was not active. This means it just received some
