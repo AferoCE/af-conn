@@ -145,7 +145,7 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 	}
 
 
-	AFLOG_DEBUG2("wifistad_attr_on_owner_set:: attributeId=%d value=%s", attributeId, (char *) value);
+	AFLOG_DEBUG2("wifistad_attr_on_owner_set:attributeId=%d", attributeId);
 
 	switch (attributeId) {
 		case AF_ATTR_WIFISTAD_CREDS:

@@ -40,26 +40,25 @@
 #include "wpa_manager.h"
 #include "wifistad.h"
 #include "mac_whitelist.h"
-#include "../include/hub_config.h"  // TODO - remove when attrd is ready
+#include "../include/hub_config.h"
 #include "wifistad_common.h"
 #define NETIF_NAMES_ALLOCATE
 #include "../include/netif_names.h"
+#include "../include/netcheck_async.h"
 
 
-// Note: name need to match attrd ownerhsip
+// Note: name need to match attrd ownership
 #define WIFISTAD_IPC_SERVER_NAME	"IPC.WIFISTAD"
 #define WIFISTAD_MAX_NUM_BSSID		50
-#define WIFISTAT_CONN_TMOUT_VAL		20
-#define PERIODIC_TM_VAL				20
+#define PERIODIC_TIMER_PERIOD_SEC	20
+#define ECHO_CHECK_TIMEOUT_MS		20000
+#define NETCHECK_DELAY_INITIAL_SEC	2
+#define NETCHECK_DELAY_MULTIPLIER	2
+#define NETCHECK_DELAY_CAP			20
 
 
 // extern
 extern char *WPA_EVENT_ID_STR[WPA_EVENT_ID_MAX];
-
-extern int8_t cm_is_service_alive(const char *service,
-				const char *itf_string,
-				uint8_t use_echo);
-
 
 // IPC server for this daemon
 uint8_t				wifista_bootup = 1;
@@ -68,25 +67,31 @@ af_ipcs_server_t	*g_wifi_sta_server = NULL;
 #ifdef BUILD_TARGET_DEBUG
 uint32_t			g_debugLevel = LOG_DEBUG1;
 #else
-uint32_t			g_debugLevel = LOG_DEBUG1;
+uint32_t			g_debugLevel = 0;
 #endif
 
-const char *WPA_STATE_STR[WPA_STATE_MAX] = {
-	"WPA STATE NOT READY",
-	"WPA STATE READY",
-	"WPA STATE CONNECTING",
-	"WPA STATE CONNECTED",
+/* This enum captures the state of the supplicant */
+typedef enum {
+	WPA_STATE_NOT_READY,
+	WPA_STATE_READY,
+	WPA_STATE_CONNECTING,
+	WPA_STATE_CONNECTED,
+	WPA_STATE_MAX
+} wpa_state_t;
+
+const char *WPA_STATE_STR[] = {
+	"WPA_STATE_NOT_READY",
+	"WPA_STATE_READY",
+	"WPA_STATE_CONNECTING",
+	"WPA_STATE_CONNECTED",
 };
 
-
+/* this enum captures the state of the daemon */
 typedef enum {
 	WIFISTAD_STATE_UNINITIALIZED,
 	WIFISTAD_STATE_SCANNING,
 	WIFISTAD_STATE_WPA_CONNECTING,
 	WIFISTAD_STATE_WPA_CONNECTED,
-	WIFISTAD_STATE_BECOMING_MASTER,
-	WIFISTAD_STATE_MASTER_READY,
-
 	WIFISTAD_STATE_MAX
 } wifistad_state_t;
 
@@ -96,8 +101,6 @@ const char *WIFISTAD_STATE_STR[] = {
 	"SCANNING",
 	"WPA_CONNECTING",
 	"WPA_CONNECTED",
-	"BECOMING MASTER",
-	"MASTER READY",
 };
 
 typedef enum {
@@ -109,8 +112,9 @@ typedef enum {
 	WIFISTAD_EVENT_WPA_CONNECTING_TMOUT,
 	WIFISTAD_EVENT_WPA_DISCONNECTED,
 	WIFISTAD_EVENT_WPA_TERMINATED,
-	WIFISTAD_EVENT_HOSTAPD_DISCONNECTED,
-	WIFISTAD_EVENT_HOSTAPD_CONNECTED,
+	WIFISTAD_EVENT_DO_NETCHECK,
+	WIFISTAD_EVENT_NETCHECK_SUCCEEDED,
+	WIFISTAD_EVENT_NETCHECK_FAILED,
 
 	WIFISTAD_EVENT_MAX
 } wifistad_event_t;
@@ -124,23 +128,16 @@ const char *WIFISTAD_EVENT_STR[WIFISTAD_EVENT_MAX] = {
 	"WPA_CONNECTING TMOUT",
 	"WPA_DISCONNECTED",
 	"WPA_TERMINATED",
-	"HOSTAPD DISCONNECTED",
-	"HOSTAPD CONNECTED",
+	"DO_NETCHECK",
+	"NETCHECK_SUCCEEDED",
+	"NETCHECK_FAILED"
 };
 
-typedef struct event_desc_s {
-	wifistad_event_t event;
-	void *param;
-} event_desc_t;
-
-
-// use by event_base_once to queue the event into the main thread
-struct timeval zero_timeout = {0, 0};
 
 static uint8_t reconn_count = 1;
 static char *scan_results = NULL;
 static struct event_base *s_evbase;
-static wpa_state_e s_wpa_state = WPA_STATE_NOT_READY;
+static wpa_state_t s_wpa_state = WPA_STATE_NOT_READY;
 
 static void prv_save_scan_results(char *results);
 static void prv_scan_started_callback(void *my_param, void *result);
@@ -148,7 +145,8 @@ void  wifistad_close ();
 void wifistad_attr_on_close(int status, void *context);
 static void prv_handle_connecting_tmout (wpa_manager_t *m);
 void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param);
-static int prv_set_event(wifistad_event_t event, void *param, struct timeval *timeout);
+static int queue_event(wifistad_event_t event);
+static void on_netcheck_complete(int status, void *context);
 
 extern int prv_send_req_ping_networks(void);
 extern void wpa_manager_dump();
@@ -158,78 +156,126 @@ extern void wpa_manager_dump();
 static uint8_t  s_scan_count = 0;
 
 static uint8_t  s_has_wifi_cfg_info = 0;
-// peridic check timer event
-static struct event *periodic_chk_ev = NULL;
 
-// to TRack the conn tmout timer
-static uint8_t  s_conn_timer_set = 0;
-#define TRACK_CONN_TIMER(event)                             \
-do {                                                        \
-	if (event == WIFISTAD_EVENT_WPA_CONNECTING_TMOUT) { \
-		s_conn_timer_set = s_conn_timer_set + 1;    \
-		AFLOG_INFO("SET_CONN_TIMER: %d", s_conn_timer_set); \
-	}                                                   \
-} while (0)
+/* we maintain three timers:
+ *    0 - periodic check timer to check and restart the supplicant connection
+ *    1 - network check delay timer to back off the network check
+ *    2 - setup timer to notify user of failed setup
+ */
+typedef enum {
+	WPA_PERIODIC_TIMER=0,
+	NETCHECK_DELAY_TIMER,
+	SETUP_TIMER,
+	NUM_TIMERS
+} timer_id_t;
 
-#define EXPIRE_CONN_TIMER(event)                            \
-do {                                                        \
-	if (event == WIFISTAD_EVENT_WPA_CONNECTING_TMOUT) { \
-		if (s_conn_timer_set >= 1) {                \
-			s_conn_timer_set = s_conn_timer_set - 1; \
-		}                                           \
-		else {                                      \
-			s_conn_timer_set = 0;               \
-		}                                           \
-		AFLOG_INFO("EXPIRE_CONN_TIMER: %d", s_conn_timer_set); \
-	}                                                   \
-} while (0)
+// Forward declare the callbacks
+static void push_event_for_timer(evutil_socket_t fd, short what, void *arg);
+static void wpa_periodic_check(evutil_socket_t fd, short what, void *arg);
+static void on_setup_timer(evutil_socket_t fd, short what, void *arg);
 
+static const event_callback_fn s_timer_callbacks[NUM_TIMERS] = {
+	wpa_periodic_check,
+	push_event_for_timer,
+	on_setup_timer
+};
 
-struct timespec prv_time_diff(struct timespec start, struct timespec end)
+static void *s_timer_contexts[NUM_TIMERS] = {
+	NULL,
+	(void *)WIFISTAD_EVENT_DO_NETCHECK,
+	NULL,
+};
+
+static struct event *s_timer_evs[NUM_TIMERS];
+
+static void destroy_timer_events(void)
 {
-    struct timespec temp;
-
-    if ((end.tv_nsec - start.tv_nsec) < 0) {
-        temp.tv_sec = end.tv_sec - start.tv_sec - 1;
-        temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
-    } else {
-        temp.tv_sec = end.tv_sec - start.tv_sec;
-        temp.tv_nsec = end.tv_nsec - start.tv_nsec;
-    }
-    return temp;
-}
-
-
-// we want to cap the wifi setup to ~1 minute or 60 seconds:
-#define CONN_TIMER_CAP      60
-static void prv_set_wifi_setup_timer()
-{
-	static struct timespec start_conn_time;
-	struct timeval conn_timeout = {WIFISTAT_CONN_TMOUT_VAL, 0};
-
-	if (s_conn_timer_set == 0) {
-		clock_gettime(CLOCK_MONOTONIC, &start_conn_time);
-		AFLOG_INFO("prv_set_wifi_setup_timer:: initiate timer for wifi setup");
-		prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
-	}
-	else {
-		struct timespec diff;
-		struct timespec time_now;
-
-		clock_gettime(CLOCK_MONOTONIC, &time_now);
-		diff = prv_time_diff(start_conn_time, time_now);
-		AFLOG_DEBUG2("prv_set_wifi_setup_timer::end=%ld.%ld, start=%ld.%ld , diff=%ld.%ld",
-					time_now.tv_sec, time_now.tv_nsec,
-					start_conn_time.tv_sec, start_conn_time.tv_nsec,
-					diff.tv_sec, diff.tv_sec);
-
-		// has wifi setup timer being 1 min or 60s?
-		// trying best to have the timer: 55s - 75s range
-		if ((diff.tv_sec != 0) && (diff.tv_sec < (CONN_TIMER_CAP - 5))) {
-			prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT, NULL, &conn_timeout);
+	for (int i=0; i < NUM_TIMERS; i++) {
+		if (s_timer_evs[i]) {
+			event_del(s_timer_evs[i]);
+			event_free(s_timer_evs[i]);
+			s_timer_evs[i] = NULL;
 		}
 	}
 }
+
+static int prv_create_timer_events(void)
+{
+	for (int i=0; i < NUM_TIMERS; i++) {
+		// Create the periodic timer event
+		s_timer_evs[i] = evtimer_new(s_evbase, s_timer_callbacks[i], s_timer_contexts[i]);
+		if (s_timer_evs[i] == NULL) {
+			AFLOG_ERR("prv_create_timer_events:errno=%d", errno);
+			destroy_timer_events();
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static void set_timer(timer_id_t timerId, int timeoutSec)
+{
+	struct timeval tv = { timeoutSec, 0 };
+	event_del(s_timer_evs[timerId]);
+	event_add(s_timer_evs[timerId], &tv);
+}
+
+static void cancel_timer(timer_id_t timerId)
+{
+	event_del(s_timer_evs[timerId]);
+}
+
+static void push_event_for_timer(evutil_socket_t fd, short what, void *arg)
+{
+	queue_event((wifistad_event_t)arg);
+}
+
+// we want to cap the wifi setup at ~1 minute or 60 seconds
+#define SETUP_TIMER_CAP		60
+// this is the amount of time we allow for one Wi-Fi setup operation
+#define SETUP_TIMER_INC		20
+
+// This function resets the setup timer out by SETUP_TIMER_INC (20 sec)
+// basically kicking the timeout of the Wi-Fi setup can down the road.
+// However, it imposes a cap of 60 seconds total for the Wi-Fi setup.
+// When the setup timer expires, and the Wi-Fi connection is still not
+// complete, we both report the setup state to the app and revert to the
+// previous good setup, if one is available.
+static time_t s_start_conn_time = 0;
+
+static void set_setup_timer(void)
+{
+	if (s_start_conn_time == 0) {
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		s_start_conn_time = now.tv_sec;
+		AFLOG_DEBUG1("set_setup_timer:timeout=%d:initiate timer for wifi setup", SETUP_TIMER_INC);
+		set_timer(SETUP_TIMER, SETUP_TIMER_INC);
+	}
+	else {
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		AFLOG_DEBUG2("set_setup_timer:end=%d,start=%d", now.tv_sec, s_start_conn_time);
+
+		if (now.tv_sec - s_start_conn_time < SETUP_TIMER_CAP - 5) {
+			AFLOG_DEBUG1("set_setup_timer:timeout=%d:initiate timer for wifi setup", SETUP_TIMER_INC);
+			set_timer(SETUP_TIMER, SETUP_TIMER_INC);
+		}
+	}
+}
+
+static void on_setup_timer(evutil_socket_t fd, short what, void *arg)
+{
+	// We've given up on this Wi-Fi setup attempt
+	// Reset the start time for the next Wi-Fi setup attempt
+	s_start_conn_time = 0;
+	queue_event(WIFISTAD_EVENT_WPA_CONNECTING_TMOUT);
+}
+
+// network ID cache before echo check succeeds
+static int s_netcheck_network_id = -1;
+static int s_netcheck_delay;
+
 
 
 /* Last step of WIFI setup (if not done, don't call this function)
@@ -245,7 +291,7 @@ static void prv_post_echo_check_processing(uint8_t  echo_succ)
 
 
 	AFLOG_INFO("prv_post_echo_check_processing:: WIFI connected to (%s). Echo %s",
-                ((wCred_p == NULL) ? m->assoc_info.ssid : wCred_p->ssid),
+			   ((wCred_p == NULL) ? m->assoc_info.ssid : wCred_p->ssid),
 				((echo_succ == 1)? "succesful" : "failed") );
 	if (echo_succ == 1) {
 		// Update the WIFI setup state (to the service)
@@ -254,8 +300,7 @@ static void prv_post_echo_check_processing(uint8_t  echo_succ)
 
 		// Update WIFI steady state (to the service)
 		wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
-	}
-	else {
+	} else {
 		// WIFI setup: AP is connected, but echo to service failed
 		// Update wifi setup state to the service
 		m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
@@ -278,7 +323,7 @@ static void prv_post_echo_check_processing(uint8_t  echo_succ)
 	}
 
 	// done with WIFI setup, reset
-	AFLOG_DEBUG2("iprv_post_echo_check_processing:: free wifi data, RESET_WIFI_SETUP(m)");
+	AFLOG_DEBUG2("prv_post_echo_check_processing::free wifi data, RESET_WIFI_SETUP(m)");
 	if (m->wifi_setup.data_p != NULL) {
 		free(m->wifi_setup.data_p);
 	}
@@ -331,8 +376,8 @@ static int prv_attempt_conn_with_config()
 // perodically check to see if wpa_supplicant connection is good
 void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 {
-    wpa_manager_t   *m = wifista_get_wpa_mgr();
-    uint8_t         wpa_ok = (m->ctrl_conn != NULL);
+	wpa_manager_t   *m = wifista_get_wpa_mgr();
+	uint8_t         wpa_ok = (m->ctrl_conn != NULL);
 	static uint8_t  count = 0;
 
 
@@ -342,9 +387,9 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 				(m->wifi_setup.who_init_setup == USER_REQUEST));
 	AFLOG_DEBUG2("wpa_periodic_check:: s_has_wifi_cfg_info = %d", s_has_wifi_cfg_info);
 
-	// user just initiated wifi setup. don't interfer with it
+	// user just initiated wifi setup. don't interfere with it
 	if (m->wifi_setup.who_init_setup == USER_REQUEST) {
-		return;
+		goto exit;
 	}
 
 	// if things fail for whatever reason, terminate and re-establish wpa
@@ -359,14 +404,16 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 				wifista_wpa_post_event(WPA_EVENT_ID_TERMINATED, NULL);
 			}
 		}
-    }
-    else {
-		if (m->current_op.pending > 5) { // pending should not be greater than 1
-			//hack: in case the worker_loop thread is hang.
+	}
+	else {
+		// Check to see if the worker thread has hung
+		if (m->current_op.pending > 5) { // pending should never be greater than 1
+			// terminate the worker thread
 			AFLOG_INFO("prv_wpa_periodic_check:: work thread hangs -> post terminated");
 			wpa_manager_dump(); // debug info
 			wifista_wpa_post_event(WPA_EVENT_ID_TERMINATED, NULL);
 		}
+		// Check if we've been waiting a long time to set up the network
 		else if ((s_wpa_state == WPA_STATE_READY) || (s_wpa_state == WPA_STATE_CONNECTING)) {
 			count++;
 			if ((count % 10) == 0) {
@@ -376,53 +423,28 @@ void wpa_periodic_check(evutil_socket_t fd, short what, void *arg)
 			}
 			wifista_wpa_post_event(WPA_EVENT_ID_CFG_CHECK, NULL);
 		}
-		else if (s_wpa_state == WPA_STATE_CONNECTED) {
-			// we are connected to an AP, but during wifi setup, echo test failed.
-			// let's test to see if the network is reachable
-			if (m->wifi_steady_state == WIFI_STATE_ECHOFAILED) {
-				int8_t echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
-				if (echo_succ == 1) { // echo successful
-					// update the wifi_steady_state attribute
-					wifista_set_wifi_steady_state(WIFI_STATE_CONNECTED);
+	}
 
-					m->wifi_setup.setup_state = m->wifi_steady_state;
-					AFLOG_DEBUG2("prv_wpa_periodic_check:: sending (WIFI_SETUP_STATE=%d)",
-								m->wifi_setup.setup_state);
-					af_attr_set(AF_ATTR_WIFISTAD_WIFI_SETUP_STATE,
-								(uint8_t *)&(m->wifi_setup.setup_state),
-								sizeof(m->wifi_setup.setup_state),
-								wifista_attr_on_set_finished,
-								NULL);
-				}
-			}
-		}
-    }
-
-    return;
+exit:
+	// set up next event
+	set_timer(WPA_PERIODIC_TIMER, PERIODIC_TIMER_PERIOD_SEC);
+	return;
 }
 
-
-
-// events = EV_TIMEOUT
 static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 {
 	static wifistad_state_t state = WIFISTAD_STATE_UNINITIALIZED;
-	event_desc_t		*event_desc = (event_desc_t *)param;
-	wifistad_event_t	event;
-
+	wifistad_event_t event = (wifistad_event_t)param;
 
 	AFLOG_DEBUG2("prv_state_machine:: events=%d,param=%p", events, param);
-	if ((param == NULL) || (event_desc->event > WIFISTAD_EVENT_MAX)) {
+	if (event < 0 || event > WIFISTAD_EVENT_MAX) {
 		AFLOG_ERR("prv_state_machine:: invalid input");
 		return;
 	}
 
-	event = event_desc->event;
 	wpa_manager_t *m = wifista_get_wpa_mgr();
 
 	wifistad_state_t old_state = state;
-
-	EXPIRE_CONN_TIMER(event);
 
 	switch (state) {
 		case WIFISTAD_STATE_UNINITIALIZED:
@@ -474,8 +496,8 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 			}
 			else if (event == WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE) {
 				AFLOG_DEBUG3("prv_state_machine:: attempt to connect, scan_results =(%s)",
-					         (scan_results == NULL) ? "NULL" : scan_results);
-				wifista_wpa_process_scan_results(s_wpa_state, scan_results);
+							 (scan_results == NULL) ? "NULL" : scan_results);
+				wifista_wpa_process_scan_results(scan_results);
 			}
 			else if (event == WIFISTAD_EVENT_WPA_CONNECTED) {
 				state = WIFISTAD_STATE_WPA_CONNECTED;
@@ -492,21 +514,19 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 					state = WIFISTAD_STATE_WPA_CONNECTED;
 					break;
 
-				case WIFISTAD_EVENT_SCAN: {  /* conn possible failed, go back to scanning state */
+				case WIFISTAD_EVENT_SCAN: {  // conn possible failed, go back to scanning state
 					state = WIFISTAD_STATE_SCANNING;
 				}
 				break;
 
 				case WIFISTAD_EVENT_WPA_CONNECTING_TMOUT:
-					if (s_conn_timer_set == 0) {
-						state = WIFISTAD_STATE_SCANNING;
-						prv_handle_connecting_tmout(m);
-					}
+					state = WIFISTAD_STATE_SCANNING;
+					prv_handle_connecting_tmout(m);
 					break;
 
 				case WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE:
 					if (m->wifi_setup.setup_event == WPA_EVENT_ID_WIFI_SCAN_REQUESTED) {
-						wifista_wpa_process_scan_results(s_wpa_state, scan_results);
+						wifista_wpa_process_scan_results(scan_results);
 					}
 					break;
 
@@ -520,36 +540,57 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 			/* connection achieve.  reset wifi setup */
 			switch (event) {
 				case WIFISTAD_EVENT_WPA_DISCONNECTED:
-					// go to scanning state -- TODO: anything to reset
+					// go to scanning state
 					state = WIFISTAD_STATE_SCANNING;
+					cancel_timer(NETCHECK_DELAY_TIMER);
 					break;
 
 				case WIFISTAD_EVENT_SCAN:
 					AFLOG_INFO("prv_state_machine:who_init_setup=%s:scanning process initiated",
-						   (m->wifi_setup.who_init_setup == USER_REQUEST) ? "USER":"SYS");
+							  (m->wifi_setup.who_init_setup == USER_REQUEST) ? "USER":"SYS");
 					wpa_manager_scan_async(prv_scan_started_callback, NULL);
 					break;
 
 				case WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE:
-					wifista_wpa_process_scan_results(s_wpa_state, scan_results);
+					wifista_wpa_process_scan_results(scan_results);
 					break;
 
 				case WIFISTAD_EVENT_WPA_CONNECTING_TMOUT:
-					if (s_conn_timer_set > 0) { // wait until it is zero
-						break;
-					}
+					// update the WPA status information
 					wpa_manager_status_async(NULL, NULL);
 
-					AFLOG_DEBUG2("prv_state_machine:: event=CONNECTING_TMOUT, setup_state=%d, who_init=%d",
-								m->wifi_setup.setup_state, m->wifi_setup.who_init_setup);
+					AFLOG_DEBUG2("prv_state_machine_timeout:setup_state=%d,who_init=%d",
+								 m->wifi_setup.setup_state, m->wifi_setup.who_init_setup);
+					break;
 
-					if (m->wifi_setup.setup_state == WIFI_STATE_ECHOFAILED) {
-						int8_t   echo_succ = 0;
-						//wifi_cred_t * wCred_p = (wifi_cred_t *)m->wifi_setup.data_p;
-
-						echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
-						prv_post_echo_check_processing(echo_succ);
+				case WIFISTAD_EVENT_DO_NETCHECK :
+					if (check_network(s_evbase, echo_service_host_p, m->ctrl_iface_name, NETCHECK_USE_ECHO,
+									  on_netcheck_complete, (void *)s_netcheck_network_id, ECHO_CHECK_TIMEOUT_MS) < 0) {
+						AFLOG_ERR("prv_wpa_event_callback_echo_fail:errno=%d", errno);
 					}
+					break;
+
+				case WIFISTAD_EVENT_NETCHECK_FAILED :
+					m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
+					if (s_netcheck_delay <= NETCHECK_DELAY_INITIAL_SEC) {
+						set_setup_timer(); // kick the can down the road a little more
+					} else {
+						prv_post_echo_check_processing(0);
+					}
+					s_netcheck_delay *= NETCHECK_DELAY_MULTIPLIER; // exponential backoff with a cap at 20 sec
+					if (s_netcheck_delay > NETCHECK_DELAY_CAP) {
+						s_netcheck_delay = NETCHECK_DELAY_CAP;
+					}
+
+					set_timer(NETCHECK_DELAY_TIMER, s_netcheck_delay);
+					break;
+
+				case WIFISTAD_EVENT_NETCHECK_SUCCEEDED :
+					m->wifi_setup.network_id = s_netcheck_network_id;
+					// clear the connection start time to indicate we're not in setup anymore
+					s_start_conn_time = 0;
+					cancel_timer(SETUP_TIMER);
+					prv_post_echo_check_processing(1);
 					break;
 
 				default:
@@ -562,14 +603,15 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 			break;
 	}
 
-	// independent of the state -- we lost wifi
+	// independent of the state -- we lost our connection to the WPA supplicant
 	if ((event == WIFISTAD_EVENT_WPA_TERMINATED) && (state != WIFISTAD_STATE_UNINITIALIZED)) {
 		state = WIFISTAD_STATE_UNINITIALIZED;
 		AFLOG_INFO("wpa_supplicant_lost::Connection to wpa_supplicant lost - trying to reconnect");
 
 		if (s_wpa_state == WPA_STATE_NOT_READY) { // wpa is not doing anything
 			wpa_manager_destroy();
-			s_conn_timer_set = 0;    // reset tmout timer count
+			cancel_timer(SETUP_TIMER);
+			cancel_timer(NETCHECK_DELAY_TIMER);
 			wifista_bootup   = 1;    // restart wpa
 
 			if (wpa_manager_init(s_evbase, NULL, NULL) < 0) {
@@ -580,43 +622,25 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 		}
 	}
 
-	free(event_desc);
-
-	AFLOG_INFO("state_changed:old_state=(%d-%s),new_state=(%d-%s),event=(%d-%s)",
-			   old_state, WIFISTAD_STATE_STR[old_state],
-			   state, WIFISTAD_STATE_STR[state],
-			   event, WIFISTAD_EVENT_STR[event]);
+	AFLOG_INFO("prv_state_machine:old_state=%s(%d),new_state=%s(%d),event=%s(%d)",
+			   WIFISTAD_STATE_STR[old_state], old_state,
+			   WIFISTAD_STATE_STR[state], state,
+			   WIFISTAD_EVENT_STR[event], event);
 }
 
 
-/* prv_set_event
+/* queue_event
  *
- * Set event of wifistad_event_t for wifistad.  The event is handled in prv_state_machine
+ * Queue up the specified event after the specified timeout
  */
-static int prv_set_event(wifistad_event_t event, void *param, struct timeval *timeout)
+static int queue_event(wifistad_event_t event)
 {
-	event_desc_t *event_desc = malloc(sizeof(*event_desc));
+	AFLOG_INFO("queue_event:event=%s(%d):event queued", WIFISTAD_EVENT_STR[event], event);
+	struct timeval tv = { 0, 0 };
 
-
-	AFLOG_INFO("prv_set_event:: Setting event=%d - (%s) ",
-			   event, WIFISTAD_EVENT_STR[event]);
-
-	if (event_desc == NULL) {
-		AFLOG_ERR("prv_set_event:malloc failed");
-		return -1;
-	}
-	if (timeout == NULL) {
-		AFLOG_ERR("prv_set_event: timeout invalid");
-		return (-1);
-	}
-	AFLOG_INFO("prv_set_event:: event timeout: %ld.%06ld ", timeout->tv_sec, timeout->tv_usec);
-
-	TRACK_CONN_TIMER(event);
-
-	event_desc->event = event;
-	event_desc->param = param;
-
-	return event_base_once(s_evbase, -1, EV_TIMEOUT, prv_state_machine, (void *)event_desc, timeout);
+	// your call will be answered in the order received
+	return event_base_once(s_evbase, -1, EV_TIMEOUT, prv_state_machine, (void *)event,
+						   event_base_init_common_timeout(s_evbase, &tv));
 }
 
 
@@ -660,8 +684,6 @@ static void prv_handle_connecting_tmout (wpa_manager_t *m)
 	return;
 }
 
-
-//static void prv_get_next_master(char **bssid, char **ssid)
 uint8_t prv_get_next_master(char **bssid, wifista_ap_t *ap, uint8_t *is_more)
 {
 	static char *line1 = NULL;
@@ -705,15 +727,14 @@ uint8_t prv_get_next_master(char **bssid, wifista_ap_t *ap, uint8_t *is_more)
 
 
 		// filter out AP with \x00 (which is NULL)
-		if ((tok[4] != NULL) &&
-			(strncmp(tok[4], "\\x00", 4) != 0)) {
+		if ((tok[4] != NULL) && (strncmp(tok[4], "\\x00", 4) != 0)) {
 			uint8_t   ssid_len = 0;
 
 			// truncate the ssid length if longer than 32
 			*bssid = tok[0];
 			ssid_len = strlen(tok[4]);
 			if (ssid_len > WIFISTA_SSID_LEN) {
-				return (-1);
+			        return (-1);
 			}
 
 			strncpy(ap->ssid, tok[4], ssid_len);
@@ -726,16 +747,14 @@ uint8_t prv_get_next_master(char **bssid, wifista_ap_t *ap, uint8_t *is_more)
 	}
 
 	*is_more = 0;
-    return (-1);
+	return (-1);
 }
-
 
 static void prv_scan_started_callback(void *my_param, void *result)
 {
 
 	if ((int)result < 0) {
-		AFLOG_DEBUG3("SCAN FAILED \n");
-		// TODO -- if scan has not started, we might want to try to initiate scan again?
+		AFLOG_DEBUG3("SCAN FAILED");
 		return;
 	}
 }
@@ -760,6 +779,16 @@ static void prv_save_scan_results(char *results)
 	return;
 }
 
+static void on_netcheck_complete(int status, void *context)
+{
+	if (status != 0) {
+		AFLOG_INFO("on_netcheck_complete_failed:status=%d", status);
+		queue_event(WIFISTAD_EVENT_NETCHECK_FAILED);
+	} else {
+		AFLOG_INFO("on_netcheck_complete_succeeded");
+		queue_event(WIFISTAD_EVENT_NETCHECK_SUCCEEDED);
+	}
+}
 
 /* prv_wpa_event_callback
  *
@@ -780,15 +809,13 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 		goto EV_CALLBACK_DONE;
 	}
 
-	AFLOG_DEBUG1("prv_wpa_event_callback:: > state=(%d, %s)  event->id=(%d, %s)",
-		   s_wpa_state, WPA_STATE_STR[s_wpa_state], event->id, WPA_EVENT_ID_STR[event->id]);
+	AFLOG_DEBUG1("prv_wpa_event_callback:initial_state=%s(%d),eventId=%s(%d)",
+		   WPA_STATE_STR[s_wpa_state], s_wpa_state, WPA_EVENT_ID_STR[event->id], event->id);
 
 	switch(event->id) {
 		case WPA_EVENT_ID_CONNECTED: {
 			wifi_cred_t   *wCred_p  = (wifi_cred_t *)m->wifi_setup.data_p;
-			uint8_t       echo_succ = 0;
 			int8_t        netid = (int)event->result;
-
 
 			if (s_wpa_state == WPA_STATE_NOT_READY) { // do nothing
 				break;
@@ -804,51 +831,44 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				return;
 			}
 
-			/* the WPA is connected to the AP*/
+			// the WPA is connected to the AP
 			s_wpa_state = WPA_STATE_CONNECTED;
 
-			/* update the states */
-			prv_set_event(WIFISTAD_EVENT_WPA_CONNECTED, (void *)1 /*done*/, &zero_timeout);
+			// update the states
+			queue_event(WIFISTAD_EVENT_WPA_CONNECTED);
 
-			/* we need to save the connect info */
+			// we need to save the connect info
 			if ((wCred_p) && (wCred_p->prev_provisioned == 0)) {
 				wifista_store_wifi_cred(wCred_p);
 
-				AFLOG_DEBUG1("prv_wpa_event_callback:: s_has_wifi_cfg_info = 1");
+				AFLOG_DEBUG1("prv_wpa_event_callback:s_has_wifi_cfg_info=1");
 				s_has_wifi_cfg_info = 1;
 			}
-			/* script file to execute when wifi associated */
+			// script file to execute when wifi associated
 			if (file_exists(WIFI_EVENT_SH_FILE)) {
-				AFLOG_INFO("wifistad:: exec %s ", WIFI_EVENT_SH_FILE);
+				AFLOG_INFO("wifistad_exec_connected:script=%s", WIFI_EVENT_SH_FILE);
 
 				af_util_system("%s %s", WIFI_EVENT_SH_FILE, "connected");
 			}
 
+			// kick off a short delay before starting network check
+			// save the network id for storing when network check succeeds
+			s_netcheck_network_id = netid;
+			s_netcheck_delay = 2;
+			set_timer(NETCHECK_DELAY_TIMER, s_netcheck_delay);
 
-			echo_succ = cm_is_service_alive(echo_service_host_p, m->ctrl_iface_name, 1);
-			if (echo_succ == 1) {
-				m->wifi_setup.network_id = netid;
-				prv_post_echo_check_processing(1);
-			} else { //echo failed. Let's wait until tmout before sending the state to APP
-				AFLOG_INFO("prv_wpa_event_callback::Echo failed, delay sending setup. Wait for tmout");
-				m->wifi_setup.setup_state = WIFI_STATE_ECHOFAILED;
-			}
-
-			/* give some extra time to handle all the event and time to process echo */
-			prv_set_wifi_setup_timer();
+			break;
 		}
-		break;
-
 
 		case WPA_EVENT_ID_DISCONNECTED:
 			if (s_wpa_state != WPA_STATE_NOT_READY) {
 				s_wpa_state = WPA_STATE_READY;
 				wpa_manager_status_async(NULL, NULL);
 				wifista_set_wifi_steady_state(WIFI_STATE_NOTCONNECTED);
-				prv_set_event(WIFISTAD_EVENT_WPA_DISCONNECTED, (void *)0 /*?*/, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_WPA_DISCONNECTED);
 
 				if (file_exists(WIFI_EVENT_SH_FILE)) {
-					AFLOG_INFO("wifistad:: exec %s  disconnected", WIFI_EVENT_SH_FILE);
+					AFLOG_INFO("wifistad_exec_disconnected:script=%s", WIFI_EVENT_SH_FILE);
 					af_util_system("%s %s", WIFI_EVENT_SH_FILE, "disconnected");
 				}
 			}
@@ -871,7 +891,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				//	1) auto_connect
 				//	2) user wifi setup
 				prv_save_scan_results((char *)event->result);
-				prv_set_event(WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE, NULL, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_SCAN_RESULTS_AVAILABLE);
 			}
 		}
 		break;
@@ -885,13 +905,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 				// give the wpa supplicant time to get ready
 				wpa_manager_status_async(NULL, NULL);
-#if 0
-// HOSTAPD not supported now
-				if (s_hostapd_state != HOSTAPD_STATE_NOT_READY) {
-					prv_set_event(WIFISTAD_EVENT_READY, NULL, &zero_timeout);
-				}
-#endif
-				prv_set_event(WIFISTAD_EVENT_READY, NULL, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_READY);
 			}
 
 			wifista_set_wifi_steady_state(WIFI_STATE_NOTCONNECTED);
@@ -917,7 +931,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				s_scan_count++;
 				AFLOG_DEBUG2("prv_wpa_event_callback:: SCAN request, start scan");
 				WIFI_SETUP_SCAN_REQUEST(m);
-				prv_set_event(WIFISTAD_EVENT_SCAN, NULL, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_SCAN);
 			}
 		}
 		break;
@@ -991,22 +1005,23 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 						wpa_manager_connect_async(NULL, NULL, m->assoc_info.id);
 					}
 					// let's go back to scanning state
-					prv_set_event(WIFISTAD_EVENT_SCAN, NULL, &zero_timeout);
+					queue_event(WIFISTAD_EVENT_SCAN);
 				}
 				else {
 					if (cResult == WPA_CONN_RESULT_TEMP_DISABLED) {
-						AFLOG_INFO("prv_wpa_event_callback:: TEMP_DISABLED, start TMOUT timer");
-						prv_set_wifi_setup_timer();
+						AFLOG_INFO("prv_wpa_event_callback::TEMP_DISABLED, start TMOUT timer");
+						// Kick the can down the road
+						set_setup_timer();
 					}
 				}
 			}
 			else {  // connecting seems to be OK
-				prv_set_event(WIFISTAD_EVENT_WPA_CONNECTING, NULL, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_WPA_CONNECTING);
 
 				if (cResult > 0) {
-					AFLOG_INFO("prv_wpa_event_callback::connecting, id=%d, start TMOUT timer", cResult);
+					AFLOG_INFO("prv_wpa_event_callback_connecting:id=%d", cResult);
 					m->wifi_setup.network_id = cResult;  // store the add_network id
-					prv_set_wifi_setup_timer();
+					set_setup_timer();
 
 					if (m->wifi_setup.setup_state != WIFI_STATE_PENDING) {
 						m->wifi_setup.setup_state = WIFI_STATE_PENDING;
@@ -1078,16 +1093,16 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 				RESET_WIFI_SETUP(m,1);
 				memset(&m->assoc_info, 0, sizeof(wpa_sta_assoc_t));
 
-				prv_set_event(WIFISTAD_EVENT_WPA_TERMINATED, NULL, &zero_timeout);
+				queue_event(WIFISTAD_EVENT_WPA_TERMINATED);
 			}
 			break;
 
 
 		case WPA_EVENT_ID_CFG_CHECK: {
 				if ((s_wpa_state == WPA_STATE_READY) || (s_wpa_state == WPA_STATE_CONNECTING)) {
-					AFLOG_INFO("prv_wpa_periodic_check:: s_conn_timer_set=%d, s_has_wifi_cfg_info=%d",
-								s_conn_timer_set, s_has_wifi_cfg_info);
-					if ((s_conn_timer_set == 0) && (s_has_wifi_cfg_info)) {
+					AFLOG_DEBUG1("prv_wpa_periodic_check:s_start_conn_time=%d,s_has_wifi_cfg_info=%d",
+								 s_start_conn_time, s_has_wifi_cfg_info);
+					if (!s_start_conn_time && s_has_wifi_cfg_info) {
 						AFLOG_INFO("prv_wpa_periodic_check:: NOT_CONNECTED but configured. Re-try");
 						prv_attempt_conn_with_config();
 					}
@@ -1101,7 +1116,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 			break;
 	}
 
-	AFLOG_DEBUG1("prv_wpa_event_callback:: < state=(%d, %s)", s_wpa_state, WPA_STATE_STR[s_wpa_state]);
+	AFLOG_DEBUG1("prv_wpa_event_callback:final_state=%s(%d)", WPA_STATE_STR[s_wpa_state], s_wpa_state);
 
 
 EV_CALLBACK_DONE:
@@ -1127,13 +1142,13 @@ int32_t wifistad_conn_to_attrd(struct event_base *s_evbase)
 
 	// connect to communicate with attrd
 	err = af_attr_open(s_evbase, WIFISTAD_IPC_SERVER_NAME,
-                       WIFISTAD_NUM_ATTR_RANGE, &wifistad_attr_range[0],
-                       wifistad_attr_on_notify,      // notify callback
-                       wifistad_attr_on_owner_set,   // owner set callback
-                       wifistad_attr_on_get_request, // owner get callback
-                       wifistad_attr_on_close,       // close callback
-                       wifistad_attr_on_open,        // open callback
-                       NULL);                        // context
+					   WIFISTAD_NUM_ATTR_RANGE, &wifistad_attr_range[0],
+					   wifistad_attr_on_notify,			// notify callback
+					   wifistad_attr_on_owner_set,		// owner set callback
+					   wifistad_attr_on_get_request,	// owner get callback
+					   wifistad_attr_on_close,			// close callback
+					   wifistad_attr_on_open,			// open callback
+					   NULL);							// context
 	if (err != AF_ATTR_STATUS_OK) {
 		AFLOG_ERR("wifistad::Unable to init the server, err=%d", err);
 		return (-1);
@@ -1151,7 +1166,6 @@ extern const char BUILD_DATE[];
  ***************/
 int main()
 {
-	struct timeval periodic_tmout_ms = {PERIODIC_TM_VAL, 0};
 	int32_t  result;
 
 	openlog("wifistad", LOG_PID, LOG_USER);
@@ -1179,7 +1193,6 @@ int main()
 	// initialize the MAC whitelist data structures.
 	wifistad_init_mac_wl();
 
-	// TODO - remove later when attrd is ready
 	hub_config_service_env_init();
 
 	result = evthread_use_pthreads();
@@ -1206,38 +1219,23 @@ int main()
 		return (-1);
 	}
 
-	{ // setting up the special zero_timeout
-		struct timeval tv_in = { 0, 0 };
-		const struct timeval *tv_out;
-		tv_out = event_base_init_common_timeout(s_evbase, &tv_in);
-		memcpy(&zero_timeout, tv_out, sizeof(struct timeval));
-	}
-
 	if (wpa_manager_init(s_evbase, NULL, NULL) < 0) {
 		AFLOG_ERR("wifistad::wpa_manager_init: failed");
 		goto wifistad_exit;
 	}
 
-	periodic_chk_ev = event_new(s_evbase, -1, (EV_TIMEOUT|EV_PERSIST), wpa_periodic_check, NULL);
-	if (periodic_chk_ev == NULL) {
-		AFLOG_ERR("wifistad:: create periodic_chk_ev failed.");
+	if (prv_create_timer_events() != 0) {
+		AFLOG_ERR("wifistad_create_timers:errno=%d", errno);
 		goto wifistad_exit;
 	}
-	event_add(periodic_chk_ev, &periodic_tmout_ms);
+
+	/* start up the periodic timer */
+	set_timer(WPA_PERIODIC_TIMER, PERIODIC_TIMER_PERIOD_SEC);
 
 	// This should be the last
 	if (wifistad_conn_to_attrd(s_evbase) < 0) {
 		goto wifistad_exit;
 	}
-
-
-#if 0
-// HOSTAPD NOT supported now
-	if (hostapd_manager_init(s_evbase, prv_hostapd_event_callback, NULL)) {
-		AFLOG_ERR("wifistad::hostapd_manager_init: failed");
-		goto wifistad_exit;
-	}
-#endif
 
 	// Start the event loop
 	AFLOG_INFO("wifistad:: running");
@@ -1247,20 +1245,20 @@ int main()
 
 
 wifistad_exit:       /* clean up */
-	wifistad_close ();
+	wifistad_close();
 	return 0;
 }
 
 
 /* wrapper function to close things up for wifistad */
-void  wifistad_close ()
+void wifistad_close()
 {
 	AFLOG_INFO("wifistad::Service is shutting down");
 	wpa_manager_destroy();
 
-//	hostapd_manager_destroy();
-
 	af_attr_close();
+
+	destroy_timer_events();
 
 	if (s_evbase) {
 		event_base_free(s_evbase);
@@ -1271,11 +1269,6 @@ void  wifistad_close ()
 	if (scan_results != NULL) {
 		free(scan_results);
 		scan_results = NULL;
-	}
-
-	if (periodic_chk_ev != NULL) {
-		event_del (periodic_chk_ev);
-		event_free (periodic_chk_ev);
 	}
 
 	closelog();
@@ -1353,7 +1346,6 @@ int8_t file_exists(const char *filename)
 	}
 	return (0);
 }
-
 
 /* set the s_has_wifi_cfg_info */
 void wifistad_set_wifi_cfg_info(uint8_t has_cfg)

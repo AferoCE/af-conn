@@ -25,18 +25,6 @@
 
 #define WIFISTA_MAX_APS         100
 
-// from wifistad.c
-typedef enum {
-    WPA_STATE_NOT_READY,
-    WPA_STATE_READY,
-    WPA_STATE_CONNECTING,   // added by TINA
-    WPA_STATE_CONNECTED,
-    WPA_STATE_MAX
-} wpa_state_e;
-
-extern const char *WPA_STATE_STR[WPA_STATE_MAX];
-
-
 // data structure of an Access Point (AP)
 // - This is used to cache the AP list
 typedef struct {
@@ -75,7 +63,7 @@ extern int wifista_get_wifi_cred(wifi_cred_t *cred_p);
 extern void wifista_store_wifi_cred(wifi_cred_t *cred_p);
 
 extern void wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p);
-extern void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result_p);
+extern void wifista_wpa_process_scan_results(char *scan_result_p);
 
 extern void wifista_wpa_user_connect_AP(void *my_param, void *result);
 extern char *wifista_find_bssid_in_ap_list(char *ssid);

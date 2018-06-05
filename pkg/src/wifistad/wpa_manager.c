@@ -35,7 +35,6 @@
 #define CONFIG_CTRL_IFACE_DIR "/var/run/wpa_supplicant"
 extern uint8_t	wifista_bootup;
 extern void wifista_reset_ap_list();
-extern struct timeval zero_timeout;   // ref wifistad.c
 extern void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param);
 
 
@@ -91,7 +90,7 @@ static int prv_lookup_network(char *key, network_lookup_key_type_e network_looku
 	char *key_token = NULL;
 	int  len = 0;
 	char network_list_buf[CTRL_RSP_BUF_LEN];
-	char *saveptr1, *saveptr2, *line;
+	char *saveptr1, *saveptr2 = NULL, *line;
 
 
 	memset(network_list_buf, 0, sizeof(network_list_buf));
@@ -216,9 +215,9 @@ static void prv_scan_results(void)
 // wpa_event_cb = prv_wpa_event_callback (wap_manager_init)
 void wifista_wpa_post_event(wpa_event_id_e id, void *result)
 {
-    wpa_manager_t *m = &s_wpa_manager;
+	wpa_manager_t *m = &s_wpa_manager;
 
-    wpa_event_t *event = malloc(sizeof(*event));
+	wpa_event_t *event = malloc(sizeof(*event));
 	if (event == NULL) {
 		AFLOG_ERR("wifista_wpa_post_event: malloc failed event %d", id);
 		return;
@@ -228,7 +227,9 @@ void wifista_wpa_post_event(wpa_event_id_e id, void *result)
 	event->result = result;
 
 	// toss this back to the main event loop
-	event_base_once(m->evbase, -1, EV_TIMEOUT, prv_wpa_event_callback, (void *)event, &zero_timeout);
+	struct timeval tv = { 0, 0 };
+	event_base_once(m->evbase, -1, EV_TIMEOUT, prv_wpa_event_callback, (void *)event,
+					event_base_init_common_timeout(m->evbase, &tv));
 
 	return;
 }
@@ -1074,10 +1075,8 @@ static void prv_try_connection_cb(evutil_socket_t fd, short what, void *arg)
 {
     wpa_manager_t   *m = &s_wpa_manager;
     struct timeval  tmout_ms = {4, 0};
-    struct event    *tm_event;
 
-
-     AFLOG_DEBUG2("Entering prv_try_connection_cb");
+    AFLOG_DEBUG3("%s_enter", __func__);
     if (m->ctrl_conn)
         return;
 
@@ -1506,7 +1505,8 @@ int wpa_manager_init(struct event_base *evbase,
     // Note: the connection to wpa_supplicant is done in prv_try_connection_cb
     // when this event is handled.
     m->tm_event = event_new(m->evbase, -1, EV_TIMEOUT, prv_try_connection_cb, NULL);
-    res = event_add(m->tm_event, &zero_timeout);
+    struct timeval tv = {0, 0};
+    res = event_add(m->tm_event, event_base_init_common_timeout(m->evbase, &tv));
     if (res != 0) {
         AFLOG_ERR("wpa_manager_init::failed to create event %d", res);
         goto error;

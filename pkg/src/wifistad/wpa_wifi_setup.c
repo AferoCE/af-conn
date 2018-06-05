@@ -182,10 +182,10 @@ wifista_load_wifi_cred(void)
  *
  * - number of APs (uint32_t)
  * - List of AP info, with attributes in the following order:
- * 		- ssid (char)
- * 		- rrsi (int32_t)
- * 		- supported_security (uint8_t)
- * 		- connected_to_it    (uint8_t)
+ *		- ssid (char)
+ *		- rrsi (int32_t)
+ *		- supported_security (uint8_t)
+ *		- connected_to_it    (uint8_t)
  *
  * param:
  * buf - buffer user to format the ap list
@@ -197,7 +197,7 @@ wifista_setup_format_ap_list (uint8_t *buf,  int32_t  *msglen)
 {
 	wifista_ap_list_t *ap_list_p = wifista_get_ap_list();  // cached list
 	hub_ap_list_t *hub_ap_list_p = (hub_ap_list_t *) buf;
-	int 			i;
+	int i;
 
 
 	if (buf == NULL) {
@@ -229,22 +229,22 @@ wifista_setup_format_ap_list (uint8_t *buf,  int32_t  *msglen)
  * b) the state (steady or setup)
  * (setup state: defined as the state during user wifi configuration process).
  */
-void 
+void
 wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p)
 {
 	int status = 0;
 
 	// Nothing we could do, let the app itself timeout.
 	if (wifi_setup_p == NULL) {
-		AFLOG_ERR("wpa_handle_wifi_setup_request:: invalid input, setup_p=NULL");
+		AFLOG_ERR("%s_param:setup_p=NULL", __func__);
 		return;
 	}
 
-	AFLOG_DEBUG2("wpa_wifi_setup_send_resp:: event=%d ", wifi_setup_p->setup_event);
-	AFLOG_DEBUG2("                           state=%d ", wifi_setup_p->setup_state);
-	AFLOG_DEBUG2("                           netword_id=%d ", wifi_setup_p->network_id);
-	AFLOG_DEBUG2("                           attributeId=%d ", wifi_setup_p->attributeId);
-	AFLOG_DEBUG2("                           getId=%d ", wifi_setup_p->getId);
+	AFLOG_DEBUG2("****");
+	AFLOG_DEBUG2("wpa_wifi_setup_send_resp:event=%d,state=%d,network_id=%d,attributeId=%d,getId=%d",
+				 wifi_setup_p->setup_event, wifi_setup_p->setup_state, wifi_setup_p->network_id,
+				 wifi_setup_p->attributeId, wifi_setup_p->getId);
+	AFLOG_DEBUG2("****");
 
 	switch (wifi_setup_p->setup_event) {
 		case WPA_EVENT_ID_WIFI_SCAN_REQUESTED: {
@@ -289,7 +289,7 @@ wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p)
 			break;
 
 
-		default:  
+		default:
 			break;
 	}
 
@@ -303,14 +303,14 @@ wifista_setup_send_rsp(wpa_wifi_setup_t  *wifi_setup_p)
  * my_param = cached_list_ap
  * result = network connected id from prv_op_configure_network
  */
-void wifista_wpa_auto_connect_AP(void *my_param,  	// input
-								 void *result)	 	// result from
+void wifista_wpa_auto_connect_AP(void *my_param,	// input
+								 void *result)		// result from
 {
-	static uint16_t  	connecting_ap = 0;
+	static uint16_t		connecting_ap = 0;
 	int					i;
 	uint8_t				found = 0;
 	wifista_ap_list_t   *ap_list_p = (wifista_ap_list_t *)my_param;
-	uint32_t 			id = (int)result;
+	uint32_t			id = (int)result;
 
 
 	if (my_param == NULL) {
@@ -361,7 +361,7 @@ void wifista_wpa_auto_connect_AP(void *my_param,  	// input
 /*
  *
  */
-void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_results_p)
+void wifista_wpa_process_scan_results(char *scan_results_p)
 {
 	wpa_manager_t   *m = wifista_get_wpa_mgr();
 
@@ -370,9 +370,7 @@ void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result
 		return;
 	}
 
-	AFLOG_INFO("wifista_process_scan_results:: wpa_state=%d (%s), who=%d",
-			   wpa_state, WPA_STATE_STR[wpa_state],
-			   m->wifi_setup.who_init_setup);
+	AFLOG_DEBUG1("wifista_process_scan_results:who=%d", m->wifi_setup.who_init_setup);
 	if (m->wifi_setup.who_init_setup == INIT_NONE) {
 		// do nothing
 		wifista_ap_list_t *ap_list = wifista_get_ap_list();
@@ -384,10 +382,12 @@ void wifista_wpa_process_scan_results(wpa_state_e  wpa_state,  char *scan_result
 	// get the list of APs
 	// wifista_retrieve_APs(scan_result_p);
 	if (m->wifi_setup.who_init_setup == AUTO_CONNECT) {
+		AFLOG_INFO("wifista_process_scan_results_auto_connect");
 		wifista_retrieve_APs(scan_results_p, AUTO_CONNECT);
 		wifista_wpa_auto_connect_AP((void *)&cached_ap_list, (void *)0);
 	}
 	else if (m->wifi_setup.who_init_setup == USER_REQUEST) {
+		AFLOG_INFO("wifista_process_scan_results_user_request");
 		wifista_retrieve_APs(scan_results_p, USER_REQUEST);
 
 		wifista_setup_send_rsp(&m->wifi_setup);
@@ -407,8 +407,8 @@ void wifista_wpa_user_connect_AP(void *my_param,  // input
 								 void *result)	  // result from
 {
 	static wifi_cred_t  *wCred_p = NULL;  // (wifi_cred_t *)my_param;
-	char         		*bssid   = NULL;
-	int32_t 	 		id = (int)result;
+	char				*bssid   = NULL;
+	int32_t				id = (int)result;
 
 
 	if (my_param == NULL) {
@@ -416,7 +416,7 @@ void wifista_wpa_user_connect_AP(void *my_param,  // input
 		return;
 	}
 
-    wCred_p = (wifi_cred_t *)my_param;
+	wCred_p = (wifi_cred_t *)my_param;
 	AFLOG_INFO("wifista_wpa_user_connect_AP::  (%s), network ID:%d",
 			   wCred_p->ssid, id);
 

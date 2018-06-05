@@ -369,7 +369,6 @@ int wpa_manager_configure_bssid_async(wpa_manager_asyc_cb_t cb, void *param, cha
 extern wpa_manager_t *wifista_get_wpa_mgr();
 extern void wifista_wpa_post_event(wpa_event_id_e id, void *result);
 extern int wpa_get_conn_network_rssi ();
-extern void wpa_periodic_check(evutil_socket_t fd, short what, void *arg);
 extern void wpa_manager_dump();
 
 
