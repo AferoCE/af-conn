@@ -90,19 +90,18 @@ typedef struct cm_monitoring_rule {
 } cm_monitoring_rule_t;
 
 
-/* define the policy */
-typedef struct cm_monitoring_policy {
-    uint8_t           conn_monitored;
-
 #define CM_MONITORING_PRI_FIRST     1       // highest preference
 #define CM_MONITORING_PRI_SECOND    2
 #define CM_MONITORING_PRI_THIRD     3
 #define CM_MONITORING_PRI_NONE      99
 
-    uint8_t           priority;             //
-
 #define CM_MONITORING_NUM_POLICY_RULES      1
+/* define the policy */
+typedef struct cm_monitoring_policy {
+    uint8_t           conn_monitored;
+    uint8_t           priority;
     cm_monitoring_rule_t      rule_table[CM_MONITORING_NUM_POLICY_RULES];
+    uint8_t           pad;
 } cm_monitoring_policy_t;
 
 
@@ -110,17 +109,20 @@ typedef struct cm_monitoring_policy {
 /* montoring control block */
 /* ----------------------- */
 
-/* control structure used by the connection monitor.
- * */
+/*
+ * control structure used by the connection monitor
+ */
 typedef struct cm_conn_monitor_struct  {
     const char      dev_name[IFNAMSIZ];
     char            ipaddr[INET_ADDRSTRLEN];  // interface ipv4 address
-    hub_netconn_status_t  dev_link_status;
 
     uint32_t        idle_count;         // idle count
-    uint8_t         conn_active;        // this network is currently being monitored
+    uint8_t         my_idx;             // index in cm_monitor_net table
+    uint8_t         dev_link_status;    // real type is hub_netconn_status_t
+    uint16_t        flags;              // monitor flags, e.g., connection is active
+
     time_t          start_uptime;       // start time when the interface is up
-                                        // iff conn_active = 1
+                                        // iff (flags & CONN_ACTIVE) == 1
 
     int32_t         pcap_fd;            // connection pcap file descriptor
     pcap_t          *pcap_handle;
@@ -128,14 +130,16 @@ typedef struct cm_conn_monitor_struct  {
     struct event    *conn_timer_event;
     struct timeval  mon_tmout_val;
 
-    uint8_t         my_idx;             // index in cm_monitor_net table
-
-    cm_monitoring_policy_t          mon_policy;
-
     cm_mon_init_func_t              conn_init_func;
     cm_handle_pkt_capture_func_t    conn_pkt_capture_handler;
     cm_handle_monitor_tmout_func_t  conn_mon_tmout_func;
+
+    cm_monitoring_policy_t          mon_policy;
 } cm_conn_monitor_cb_t;
+
+#define CM_MON_FLAGS_CONN_ACTIVE (1 << 0)
+#define CM_MON_FLAGS_PREV_ACTIVE (1 << 1)
+#define CM_MON_FLAGS_IN_NETCHECK (1 << 2)
 
 /*
  * The currently inuse network interface

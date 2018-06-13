@@ -23,19 +23,6 @@ cm_conn_monitor_cb_t *
         cm_find_monitored_net_obj(const char *ifname);
 
 /*
- * API to confirm whether the network connection is good.
- *
- * send an echo packet to 'echo.dev.afero.io'
- * or
- * ping a well known destination.
- *
- */
-extern
-int8_t cm_is_service_alive(const char *service,    // service name (echo) or IP addr (ping)
-                            const char *itf_string, // interface name
-                            uint8_t    use_echo);   // using echo method?
-
-/*
  * API to retrieve the IP address given a interface dev name
  */
 extern

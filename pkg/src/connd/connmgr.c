@@ -367,7 +367,7 @@ cm_monitored_cb_init ()
 
     for (i=0; i<CONNMGR_NUM_MONITORED_ITF; i++) {
         cm_monitored_net[i].idle_count  = 0;
-        cm_monitored_net[i].conn_active = 0;
+        cm_monitored_net[i].flags = 0;
         //cm_monitored_net[i].dev_link_status = CM_DEV_STATUS_DOWN;
         cm_monitored_net[i].dev_link_status = NETCONN_STATUS_ITFDOWN_SU;
 

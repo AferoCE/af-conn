@@ -43,42 +43,31 @@ cm_select_pri_netitf(cm_conn_monitor_cb_t   *conn_a,
 {
 
     if ((conn_a == NULL) && (conn_b != NULL)) {
-        if (conn_b->conn_active) {
+        if (conn_b->flags & CM_MON_FLAGS_CONN_ACTIVE) {
             return conn_b;
         }
     }
 
     if ((conn_a != NULL) && (conn_b == NULL)) {
-        if (conn_a->conn_active) {
+        if (conn_a->flags & CM_MON_FLAGS_CONN_ACTIVE) {
             return conn_a;
         }
     }
 
     if ((conn_a != NULL) && (conn_b != NULL)) {
-        switch (conn_a->conn_active) {
-            case 1:
-                if (conn_b->conn_active) {
-                    if (conn_a->mon_policy.priority < conn_b->mon_policy.priority) {
-                        return conn_a;
-                    }
-                    else {
-                        return conn_b;
-                    }
-                }
-                break;
-
-            case 0:
-                if (conn_b->conn_active) {
+        if (conn_a->flags & CM_MON_FLAGS_CONN_ACTIVE) {
+            if (conn_b->flags & CM_MON_FLAGS_CONN_ACTIVE) {
+                if (conn_a->mon_policy.priority < conn_b->mon_policy.priority) {
+                    return conn_a;
+                } else {
                     return conn_b;
                 }
-                break;
-
-            default:
-                AFLOG_ERR("cm_select_pri_netitf:: Unsupport conn_a (%s), active value=%d",
-                        conn_a->dev_name, conn_a->conn_active);
-                break;
+            }
+        } else {
+            if (conn_b->flags & CM_MON_FLAGS_CONN_ACTIVE) {
+                return conn_b;
+            }
         }
-
     }
 
     return NULL;
@@ -179,11 +168,11 @@ cm_select_next_inuse_network (hub_netconn_status_t    trigger_ev,
                         selected_p = &cm_monitored_net[i];
                     }
 
-                    if  ((selected_p) && (cm_monitored_net[i].conn_active)) {
+                    if  ((selected_p) && (cm_monitored_net[i].flags & CM_MON_FLAGS_CONN_ACTIVE)) {
                         /* The designated 'select' network is not active, and this one is.
                          * Use the active network
                          */
-                        if (selected_p->conn_active == 0) {
+                        if ((selected_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
                             selected_p = &cm_monitored_net[i];
                         }
                         else {
@@ -315,7 +304,7 @@ DONE_SWITCHING:
 
 		AFLOG_INFO("cm_check_update_inuse_netconn:: SWITCHED from (%s) to NETWORK(%s, active=%d)",
 					((cur_inuse_p == NULL) ? "NULL" : (cur_inuse_p->dev_name)),
-					switch_to_p->dev_name, switch_to_p->conn_active);
+					switch_to_p->dev_name, switch_to_p->flags & CM_MON_FLAGS_CONN_ACTIVE);
 
 		CM_SET_INUSE_NETCONN_CB(switch_to_p);
 

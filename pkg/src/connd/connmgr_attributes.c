@@ -107,7 +107,7 @@ static int8_t  cm_get_network_type()
 	// When there is only one interface configured, and it went down
 	// we don't necessary set the conn_cb to NULL, however, it is no longer
 	// on this interface, and we should report as NONE.
-	if (conn_cb->conn_active == 0) {
+	if ((conn_cb->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
 		return (HUB_NETWORK_TYPE_NONE);
 	}
 	else if (conn_cb->my_idx == CM_MONITORED_ETH_IDX) {
@@ -303,7 +303,7 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 					tmp_p = wan_mon_p;
 				}
 
-				if ((tmp_p) && (tmp_p->conn_active)) {
+				if ((tmp_p) && (tmp_p->flags & CM_MON_FLAGS_CONN_ACTIVE)) {
 					time(&end_time);
 					diff = difftime(end_time, tmp_p->start_uptime);
 				}

@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <event.h>
+#include <time.h>
 
 #include "af_log.h"
 #include "connmgr.h"
@@ -43,6 +44,7 @@
 #include "../include/hub_config.h"
 #include "connmgr_attributes.h"
 #include "connmgr_hub_opmode.h"
+#include "../include/netcheck_async.h"
 
 
 #define CM_RECOVERY_ATTEMPT_INTERVALS     (CONNMGR_DWD_INTERVALS * 2)
@@ -201,7 +203,7 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
 
     /* interface is up with IP addr assigned, we don't know service is up */
     conn_mon_p->idle_count = 0;
-    conn_mon_p->conn_active = 1;
+    conn_mon_p->flags |= CM_MON_FLAGS_CONN_ACTIVE;
     time(&(conn_mon_p->start_uptime));
 
     if (conn_mon_p->my_idx == CM_MONITORED_BR_IDX) {
@@ -392,11 +394,11 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
             return;
         }
 
-        AFLOG_DEBUG3("cm_handle_netitf_got_packet:: EV_READ, res=%d, (%s) active=%d conn_mon_p=%p",
-                     res, conn_mon_p->dev_name, conn_mon_p->conn_active, conn_mon_p);
+        AFLOG_DEBUG3("cm_handle_netitf_got_packet:event=EV_READ,res=%d,name=%s,flags=%d,conn_mon_p=%p",
+                     res, conn_mon_p->dev_name, conn_mon_p->flags, conn_mon_p);
 
         if (res == -1) {
-            if (conn_mon_p->conn_active == 0) {
+            if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
                 /* nothing to do */
                 return;
             }
@@ -415,9 +417,9 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
             AFLOG_DEBUG2("cm_handle_netitf_got_packet:: NO packet read");
         }
         else if (res == 1) {
-            AFLOG_DEBUG2("cm_handle_netitf_got_packet:: dev=(%s, active=%d, link_status=%d), RESET IDLE COUNT",
+            AFLOG_DEBUG2("cm_handle_netitf_got_packet:dev=%s,flags=%d,link_status=%d:RESET IDLE COUNT",
                          conn_mon_p->dev_name,
-                         conn_mon_p->conn_active,
+                         conn_mon_p->flags,
                          conn_mon_p->dev_link_status);
 
             /* Fix for HUB-904. If we're connected to an active portal, we could get traffic */
@@ -428,7 +430,7 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
                 conn_mon_p->idle_count = 0;
             }
 
-            if (conn_mon_p->conn_active == 0) {
+            if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
                 /* This interface was not active. This means it just received some
                  * traffic from this connection.  Let's switch check to see if we
                  * should switch over to it
@@ -457,6 +459,89 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
     return;
 }
 
+#define NETCHECK_TIMEOUT_MS 20000
+
+// handle the results of the echo check in the timeout handler below
+static void on_idle_ping_check(int error, void *context)
+{
+    cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
+    if (conn_mon_p == NULL) {
+        AFLOG_ERR("%s_context");
+        return;
+    }
+
+    if (!error) {
+        // The interface is up; reset the idle count
+        conn_mon_p->idle_count = 0;
+    }
+    connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
+    conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
+}
+
+// handle the results of the echo check in the timeout handler below
+
+static void on_idle_echo_check(int error, void *context)
+{
+    cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
+    if (conn_mon_p == NULL) {
+        AFLOG_ERR("%s_context");
+        return;
+    }
+
+    if (!error) { // the interface is up; reset the idle count
+        conn_mon_p->idle_count = 0;
+        if (conn_mon_p->dev_link_status != NETCONN_STATUS_ITFUP_SS) {
+            conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
+
+            // Let's see if we need to switch to this network
+            cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
+        }
+        conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
+    } else {      // echo check failed
+        AFLOG_DEBUG1("%s_echo_failed:error=%d:trying ping", __func__, error);
+
+        /* Let's try ping just to make sure */
+        int rc = check_network(CONNMGR_GET_EVBASE(), conn_mon_p->ipaddr, conn_mon_p->dev_name,
+                               NETCHECK_USE_PING, on_idle_ping_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
+        if (rc < 0) {
+            AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure");
+        }
+    }
+
+    connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
+}
+
+static void on_bring_up_echo_check(int error, void *context)
+{
+    cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
+    if (conn_mon_p == NULL) {
+        AFLOG_ERR("%s_context");
+        return;
+    }
+    if (!error) { // This interface is alive
+        if (((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) && ((conn_mon_p->flags & CM_MON_FLAGS_PREV_ACTIVE) == 0))  {
+            cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SS);
+            AFLOG_INFO("%s_alive:link_status=%s(%d):interface is alive",
+                       NETCONN_STATUS_STR[conn_mon_p->dev_link_status], conn_mon_p->dev_link_status);
+        }
+        else {
+            conn_mon_p->idle_count = 0;
+            conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
+        }
+
+        /* Let's see if we need to switch to this network */
+        cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
+    } else {      // This interface is not alive
+        if (conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {
+            conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SF;
+
+            cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SF, conn_mon_p);
+        }
+    }
+
+    connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
+    conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
+}
 
 /*
  * cm_mon_tmout_handler
@@ -487,7 +572,6 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
 void
 cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 {
-    uint32_t   rc;
     cm_conn_monitor_cb_t   *conn_mon_p = NULL;
 
 
@@ -497,16 +581,22 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
         return;
     }
 
-    /* Periodically print a log */
-    if (conn_mon_p->idle_count % CONNMGR_DWD_CHECK_INTERVALS == (CONNMGR_DWD_CHECK_INTERVALS-1)) {
-        AFLOG_DEBUG1("cm_mon_tmout_handler::itf=(%s,active=%d,link_status=%d), idle_count=%d, INUSE=%s, num netconn:%d",
-                 conn_mon_p->dev_name, conn_mon_p->conn_active,
-                 conn_mon_p->dev_link_status, conn_mon_p->idle_count,
-                 CM_GET_INUSE_NETCONN_CB()->dev_name,
-                 cm_netconn_count);
-    }
-
     if (events & EV_TIMEOUT) {  // on timeout in second(s) interval
+
+        // suspend the idle count if we're checking the network
+        // the netcheck times out after NETCHECK_TIMEOUT_MS (20 sec)
+        if (conn_mon_p->flags & CM_MON_FLAGS_IN_NETCHECK) {
+            return;
+        }
+
+        /* Periodically print a log */
+        if (conn_mon_p->idle_count % CONNMGR_DWD_CHECK_INTERVALS == (CONNMGR_DWD_CHECK_INTERVALS-1)) {
+            AFLOG_DEBUG2("cm_mon_tmout_handler:itf=%s,flags=%d,link_status=%d,idle_count=%d,inuse_itf=%s,num_netconn:%d",
+                         conn_mon_p->dev_name, conn_mon_p->flags,
+                         conn_mon_p->dev_link_status, conn_mon_p->idle_count,
+                         CM_GET_INUSE_NETCONN_CB()->dev_name,
+                         cm_netconn_count);
+        }
 
         // Increment the idle_count
         conn_mon_p->idle_count++;
@@ -517,7 +607,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFDOWN_SX) ||
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFNOTSUPP_SX)) {
 
-                AFLOG_DEBUG1("cm_mon_tmout_handler:itf=(%s),dev_link_status=%d(%s):nothing to do",
+                AFLOG_DEBUG2("cm_mon_tmout_handler:itf=(%s),dev_link_status=%s(%d):nothing to do",
                              conn_mon_p->dev_name,
                              conn_mon_p->dev_link_status,
                              NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
@@ -537,36 +627,21 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
              * We assume that if (wwan0) exists with IP, then we should have connectivity.
              */
             if (conn_mon_p->my_idx != CM_MONITORED_WAN_IDX) {
-                // send an echo
-                rc = cm_is_service_alive(echo_service_host_p, conn_mon_p->dev_name, 1);
-                if (rc != 1) { // echo didn't reply
-                    AFLOG_DEBUG1("cm_mon_tmout_handler:: Re-try ping (2/2)");
-
-                    /* Let's try ping just to make sure */
-                    if (cm_is_service_alive(conn_mon_p->ipaddr, conn_mon_p->dev_name, 0) == 1) {
-                        conn_mon_p->idle_count = 0;
-                    }
-
-                    connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
+                // send an echo, which has two effects:
+                // 1) check if network is alive
+                // 2) put some traffic on the network
+                int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, conn_mon_p->dev_name,
+                                       NETCHECK_USE_ECHO, on_idle_echo_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
+                if (rc < 0) {
+                    AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure");
                 }
-                else {
-                    conn_mon_p->idle_count = 0;
-                    if (conn_mon_p->dev_link_status != NETCONN_STATUS_ITFUP_SS) {
-                        conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
-
-                        /* Let's see if we need to switch to this network */
-                        cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
-                    }
-                }
-
-                connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
             } // !WAN
         }
         else if (conn_mon_p->idle_count >= CONNMGR_DWD_INTERVALS) {
             int   old_link_status = conn_mon_p->dev_link_status;
 
             // Declare this connection DEAD if it has not been declared.
-            if (conn_mon_p->conn_active) {
+            if (conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {
                 // the interface is UP, but service FAILED
                 cm_set_itf_down(conn_mon_p, NETCONN_STATUS_ITFUP_SF);
 
@@ -581,12 +656,15 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                      **/
                     cm_check_update_inuse_netconn(conn_mon_p->dev_link_status, conn_mon_p);
                 }
-            }
-            else {
+            } else {
                 /* periodically let's check to see if we could init the network device */
                 if ( ((conn_mon_p->idle_count % CM_RECOVERY_ATTEMPT_INTERVALS) == 0) ||
                      (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFUP_SU)) {
-                    uint8_t  prev_active = conn_mon_p->conn_active;
+                    // set the previous active flag according to whether the connection is active
+                    conn_mon_p->flags &= ~CM_MON_FLAGS_PREV_ACTIVE;
+                    if (conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {
+                        conn_mon_p->flags |= CM_MON_FLAGS_PREV_ACTIVE;
+                    }
                     if (conn_mon_p->pcap_handle == NULL) {
                         if (conn_mon_p->conn_init_func) {
                             conn_mon_p->conn_init_func(CONNMGR_GET_EVBASE(), arg);
@@ -595,45 +673,31 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
                     if (conn_mon_p->pcap_handle != NULL) {
                         /* update the link status and increment monitored network counter */
-                        if ((conn_mon_p->conn_active) && (prev_active == 0)) {
+                        if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) && ((conn_mon_p->flags & CM_MON_FLAGS_PREV_ACTIVE) == 0)) {
                             AFLOG_DEBUG1("cm_mon_tmout_handler:: dev=%s, link becomes active",
                                          conn_mon_p->dev_name);
                             cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SU);
                         }
 
-                        if ((conn_mon_p->conn_timer_event) && (prev_active==0)) {
+                        if ((conn_mon_p->conn_timer_event) && ((conn_mon_p->flags & CM_MON_FLAGS_PREV_ACTIVE)==0)) {
                             evtimer_add(conn_mon_p->conn_timer_event, &conn_mon_p->mon_tmout_val);
                         }
 
                         /* Let echo tells us that this interface is GOOD or not */
-                        if (cm_is_service_alive(echo_service_host_p, conn_mon_p->dev_name, 1) == 1) {
-                            if ((conn_mon_p->conn_active == 0) && (prev_active == 0))  {
-                                cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SS);
-                            }
-                            else {
-                                conn_mon_p->idle_count = 0;
-                                conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
-                            }
-
-                            /* Let's see if we need to switch to this network */
-                            cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
-                        }
-                        else {
-                            if (conn_mon_p->conn_active) {
-                                conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SF;
-
-                                cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SF, conn_mon_p);
-                            }
+                        conn_mon_p->flags |= CM_MON_FLAGS_IN_NETCHECK;
+                        int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, conn_mon_p->dev_name,
+                                               NETCHECK_USE_ECHO, on_bring_up_echo_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
+                        if (rc < 0) {
+                            AFLOG_ERR("_%s_:errno=%d:unrecoverable netcheck failure", __func__, errno);
                         }
 
                         if (old_link_status != conn_mon_p->dev_link_status) {
-                            AFLOG_INFO("link_up:device=%s,old_status=(%d-%s),new_status=(%d-%s):",
+                            AFLOG_INFO("link_up:device=%s,old_status=%s(%d),new_status=%s(%d):",
                                        conn_mon_p->dev_name,
-                                       old_link_status, NETCONN_STATUS_STR[old_link_status],
-                                       conn_mon_p->dev_link_status, NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
+                                       NETCONN_STATUS_STR[old_link_status], old_link_status,
+                                       NETCONN_STATUS_STR[conn_mon_p->dev_link_status], conn_mon_p->dev_link_status);
                         }
 
-                        connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
                     }
                 }
             }
@@ -710,12 +774,12 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
     // OK - this should contains the uevent that we are interested in
     switch (parse_uevent.iAction) {
         case CM_UEVENT_ACTION_ADD:
-            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=ADD,device=%s,active=%d,link_status=%d:interface added event",
+            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=ADD,device=%s,flags=%d,link_status=%d:interface added event",
                          net_conn_p->dev_name,
-                         net_conn_p->conn_active,
+                         net_conn_p->flags,
                          net_conn_p->dev_link_status);
 
-            if (net_conn_p->conn_active == 0) {
+            if ((net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
 
                 cm_netconn_up_detected(net_conn_p);
 
@@ -723,12 +787,12 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
             break;
 
         case CM_UEVENT_ACTION_REMOVE:
-            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=REMOVE,device=%s,active=%d,num_monitored=%d:interface removed event",
+            AFLOG_DEBUG1("cm_on_recv_hotplug_events:uevent=REMOVE,device=%s,flags=%d,num_monitored=%d:interface removed event",
                          net_conn_p->dev_name,
-                         net_conn_p->conn_active,
+                         net_conn_p->flags,
                          cm_netconn_count);
 
-            if (net_conn_p->conn_active == 1) {
+            if (net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {
                 int   old_link_status = net_conn_p->dev_link_status;
 
                 /* Update the link status, conn_active, and cm_netconn_count */
@@ -808,7 +872,7 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
                 if ((net_conn_p = cm_find_monitored_net_obj(ifname)) != NULL) {
 
                     if (ifi->ifi_flags & IFF_RUNNING) {
-                        if (net_conn_p->conn_active == 1) {  // active already
+                        if (net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {  // active already
                             /* nothing to do */
                             return;
                         }
@@ -832,7 +896,7 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
                     }
                     else {   // no need to worry about itf down - this is done in tmout handler
 
-                        if ((net_conn_p->conn_active == 0) && (net_conn_p->pcap_handle == NULL)) {
+                        if (((net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) && (net_conn_p->pcap_handle == NULL)) {
                             /* nothing to do, it has been taking care of */
                             return;
                         }
@@ -895,7 +959,7 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
 void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
                    hub_netconn_status_t   new_status)
 {
-    net_conn_p->conn_active = 1;
+    net_conn_p->flags |= CM_MON_FLAGS_CONN_ACTIVE;
     net_conn_p->dev_link_status = new_status;
     time(&(net_conn_p->start_uptime));
 
@@ -942,9 +1006,9 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
         return;
     }
 
-    if (net_conn_p->conn_active == 1) {
+    if (net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) {
         cm_netconn_count = cm_netconn_count - 1;
-        net_conn_p->conn_active = 0;
+        net_conn_p->flags &= ~CM_MON_FLAGS_CONN_ACTIVE;
     }
     net_conn_p->dev_link_status = new_status;
 
@@ -968,8 +1032,8 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
     if (net_conn_p == NULL)
         return;
 
-    AFLOG_DEBUG1("cm_netconn_up_detected:: dev=%s,active=%d,link_status=%d,pcap_handle=%p)",
-                 net_conn_p->dev_name, net_conn_p->conn_active,
+    AFLOG_DEBUG1("cm_netconn_up_detected:: dev=%s,flags=%d,link_status=%d,pcap_handle=%p)",
+                 net_conn_p->dev_name, net_conn_p->flags,
                  net_conn_p->dev_link_status, net_conn_p->pcap_handle);
 
     old_status = net_conn_p->dev_link_status;
@@ -1000,7 +1064,7 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         }
         else {
             net_conn_p->dev_link_status = NETCONN_STATUS_ITFDOWN_SX;
-            net_conn_p->conn_active = 0;
+            net_conn_p->flags &= ~CM_MON_FLAGS_CONN_ACTIVE;
 
             // [HUB-813]
             // conn_init_func failed due to IPADDR not assigned yet. Wait for two monitor
@@ -1022,7 +1086,7 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
          * assigned.  This could due to network not reachable - not heard for
          * awhile.
          */
-        if (net_conn_p->conn_active == 0) {
+        if ((net_conn_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
             AFLOG_WARNING("cm_netconn_up_detected:%s - becomes active!", net_conn_p->dev_name);
             if (net_conn_p->my_idx == CM_MONITORED_WAN_IDX) {
                 cm_set_itf_up(net_conn_p, NETCONN_STATUS_ITFUP_SS);
@@ -1038,8 +1102,8 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         evtimer_add(net_conn_p->conn_timer_event, &net_conn_p->mon_tmout_val);
     }
 
-    AFLOG_INFO("link_up:device=%s,conn_active=%d,old_status=(%d-%s),new_status=(%d-%s)",
-               net_conn_p->dev_name, net_conn_p->conn_active,
+    AFLOG_INFO("link_up:device=%s,flags=%d,old_status=(%d-%s),new_status=(%d-%s)",
+               net_conn_p->dev_name, net_conn_p->flags,
                old_status, NETCONN_STATUS_STR[old_status],
                net_conn_p->dev_link_status, NETCONN_STATUS_STR[net_conn_p->dev_link_status]);
 

@@ -17,7 +17,9 @@ connmgr_SOURCES = connmgr.c 	  \
 				  hub_netconn_status.c \
 				  connmgr_util.c \
 				  connmgr_attributes.c \
-				  wildcard_match.c
+				  wildcard_match.c \
+				  ../common/netcheck_async.c
+
 connmgr_LDADD = -laf_attr -laf_ipc -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt
 connmgr_CFLAGS = -Wall $(CFLAGS_BUILD_TARGET)
 
