@@ -229,7 +229,7 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
 
 
 /*
- * connmgr_handle_captured_pkt
+ * capture_pkt
  *    handles reading and parsing the captured packet.
  *    Note: this is the callback function used by pcap_dispatch()
  *
@@ -247,13 +247,13 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
  *
  */
 static void
-connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_char *packetptr)
+capture_pkt(u_char *user, const struct pcap_pkthdr *h, const u_char *packetptr)
 {
     struct ip* iphdr;
     struct icmphdr* icmphdr;
     struct tcphdr* tcphdr;
     struct udphdr* udphdr;
-    char iphdrInfo[256], srcip[256], dstip[256];
+    char srcip[256], dstip[256];
     unsigned short id, seq;
     struct ether_header *eptr;  /* net/ethernet.h */
     u_int16_t type = 0;
@@ -265,10 +265,10 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
     // If there is an ARP or RARP message from the wireless
     // intranet, do this mean the network wireless connection is working?
     if (type == ETHERTYPE_ARP) {/* handle arp packet */
-        AFLOG_DEBUG3("connmgr_handle_captured_packet:: got a ARP");
+        AFLOG_DEBUG3("%s_ARP", __func__);
     } /* ignore */
     else if(type == ETHERTYPE_REVARP) {/* handle reverse arp packet */
-        AFLOG_DEBUG3("connmgr_handle_captured_packet:: got an REVARP");
+        AFLOG_DEBUG3("%s_REVARP", __func__);
     } /* ignore */
     else if (type == ETHERTYPE_IP) {
         int header_size;
@@ -277,13 +277,12 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
         iphdr = (struct ip *) packetptr;
         strcpy(srcip, inet_ntoa(iphdr->ip_src));
         strcpy(dstip, inet_ntoa(iphdr->ip_dst));
-        sprintf(iphdrInfo, "ID:%d TOS:0x%x, TTL:%d IpLen:%d DgLen:%d",
-                ntohs(iphdr->ip_id), iphdr->ip_tos, iphdr->ip_ttl,
-                4 * iphdr->ip_hl, ntohs(iphdr->ip_len));
 
-        AFLOG_DEBUG2("connmgr_handle_captured_packet::h->len=%d, ip_p=%d, (s:%s -> d:%s), %s",
-                   h->len, iphdr->ip_p, srcip, dstip, iphdrInfo);
-
+        AFLOG_DEBUG3("%s_IP:h->len=%d,ip_p=%d,src=%s,dst=%s,id=%d,tos=0x%x,ttl=%d,ip_len=%d,dg_len=%d",
+                     __func__,
+                     h->len, iphdr->ip_p, srcip, dstip,
+                     ntohs(iphdr->ip_id), iphdr->ip_tos, iphdr->ip_ttl,
+                     4 * iphdr->ip_hl, ntohs(iphdr->ip_len));
 
         //header_size =  sizeof(struct ethhdr) + iphdrlen + tcph->doff*4;
 
@@ -291,7 +290,8 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
         switch (iphdr->ip_p) {
             case IPPROTO_TCP:
                 tcphdr = (struct tcphdr *) packetptr;
-                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, TCP  %s:%d -> %s:%d",
+                AFLOG_DEBUG2("%s_TCP:dev=%s,src=%s/%d,dst=%s/%d",
+                             __func__,
                              ( (user == NULL) ? "Unknown" : (char *)user ),
                              srcip, ntohs(tcphdr->source),
                              dstip, ntohs(tcphdr->dest));
@@ -313,8 +313,8 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
                 // header_size = 14 + ( 4 * iphdr->ip_hl) + tcphdr->doff*4;
                 header_size = tcphdr->doff*4;
                 if (sport == NAMESERVER_PORT) {
-                    AFLOG_DEBUG2("TCP:: GOT DNS packet, header_size=%d, len=%d",
-                               header_size, iphdr->ip_len - header_size);
+                    AFLOG_DEBUG2("%s_TCP_DNS:header_size=%d,len=%d",
+                                 __func__, header_size, iphdr->ip_len - header_size);
                     cm_extract_dns_rrec(packetptr + header_size, iphdr->ip_len - header_size, 0);
                 }
                 break;
@@ -322,13 +322,15 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
             case IPPROTO_UDP:
                 udphdr = (struct udphdr *) packetptr;
                 sport = ntohs(udphdr->source);
-                AFLOG_DEBUG2("CAPTURED_PACKET:: dev:%s, UDP  %s:%d -> %s:%d",
+                AFLOG_DEBUG2("%s_UDP:dev=%s,src=%s/%d,dst=%s/%d",
+                             __func__,
                              ( (user == NULL) ? "Unknown" : (char *)user ),
                              srcip, sport,
                              dstip, ntohs(udphdr->dest));
                 header_size = sizeof (struct udphdr);
                 if (sport == NAMESERVER_PORT) {
-                    AFLOG_DEBUG2("UDP:: We got DNS packet: header_size=%d, len=%d",
+                    AFLOG_DEBUG2("%s_UDP_DNS:header_size=%d,len=%d",
+                               __func__,
                                header_size, udphdr->len);
                     cm_extract_dns_rrec(packetptr + header_size, udphdr->len - header_size, 0);
                 }
@@ -338,7 +340,8 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
                 icmphdr = (struct icmphdr *) packetptr;
                 memcpy(&id, (u_char *) icmphdr + 4, 2);
                 memcpy(&seq, (u_char *) icmphdr + 6, 2);
-                AFLOG_DEBUG2("dev:%s, ICMP (%s -> %s), Type:%d Code:%d ID:%d Seq:%d",
+                AFLOG_DEBUG2("%s__ICMP:dev=%s,src=%s,dst=%s,type=%d,code=%d,id=%d,seq=%d",
+                             __func__,
                              ( (user == NULL) ? "Uknown" : (char *)user ),
                              srcip, dstip, icmphdr->type, icmphdr->code, ntohs(id), ntohs(seq));
                 break;
@@ -346,7 +349,7 @@ connmgr_handle_captured_pkt(u_char *user, const struct pcap_pkthdr *h, const u_c
 
     }
     else if (type == ETHERTYPE_IPV6 ) {
-        AFLOG_DEBUG2("connmgr_handle_captured_packet:: captured IPv6 packet");
+        AFLOG_DEBUG2("%s_IPV6", __func__);
     } /* ignored */
 
     return;
@@ -386,7 +389,7 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
 
         uint32_t res = pcap_dispatch(conn_mon_p->pcap_handle,
                                      1,
-                                     connmgr_handle_captured_pkt,
+                                     capture_pkt,
                                      (u_char *)conn_mon_p->dev_name);
 
         if (conn_mon_p->my_idx == CM_MONITORED_BR_IDX) {
@@ -416,6 +419,7 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
             // destined for the OUT direction.
             AFLOG_DEBUG2("cm_handle_netitf_got_packet:: NO packet read");
         }
+#if 0
         else if (res == 1) {
             AFLOG_DEBUG2("cm_handle_netitf_got_packet:dev=%s,flags=%d,link_status=%d:RESET IDLE COUNT",
                          conn_mon_p->dev_name,
@@ -434,7 +438,7 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
                 /* This interface was not active. This means it just received some
                  * traffic from this connection.  Let's switch check to see if we
                  * should switch over to it
-                 **/
+                 */
                 AFLOG_DEBUG1("cm_handle_netitf_got_packet:dev=%s:packet detected on interface",
                              conn_mon_p->dev_name);
 
@@ -450,8 +454,8 @@ cm_handle_netitf_got_packet (evutil_socket_t fd, short events, void *arg)
 
                 CONNMGR_SET_ATTR_PENDING(0);
             }
-
         }  // res == 1
+#endif
     } // (event & EV_READ)
     else {
         AFLOG_WARNING("cm_handle_netitf_got_packet:: Event not handled");
@@ -466,13 +470,22 @@ static void on_idle_ping_check(int error, void *context)
 {
     cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
     if (conn_mon_p == NULL) {
-        AFLOG_ERR("%s_context");
+        AFLOG_ERR("%s_context", __func__);
         return;
     }
 
     if (!error) {
         // The interface is up; reset the idle count
         conn_mon_p->idle_count = 0;
+
+        // if we haven't reported that this interface is up, do it now
+        if ((CONNMGR_GET_ATTR_PENDING() == 1) &&
+            (CM_GET_INUSE_NETCONN_CB() == conn_mon_p)) {
+            // currently only network_type
+            cm_attr_set_network_type();
+
+            CONNMGR_SET_ATTR_PENDING(0);
+        }
     }
     connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
     conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
@@ -484,12 +497,22 @@ static void on_idle_echo_check(int error, void *context)
 {
     cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
     if (conn_mon_p == NULL) {
-        AFLOG_ERR("%s_context");
+        AFLOG_ERR("%s_context", __func__);
         return;
     }
 
     if (!error) { // the interface is up; reset the idle count
         conn_mon_p->idle_count = 0;
+
+        // if we haven't reported that this interface is up, do it now
+        if ((CONNMGR_GET_ATTR_PENDING() == 1) &&
+            (CM_GET_INUSE_NETCONN_CB() == conn_mon_p)) {
+            // currently only network_type
+            cm_attr_set_network_type();
+
+            CONNMGR_SET_ATTR_PENDING(0);
+        }
+
         if (conn_mon_p->dev_link_status != NETCONN_STATUS_ITFUP_SS) {
             conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
 
@@ -504,7 +527,7 @@ static void on_idle_echo_check(int error, void *context)
         int rc = check_network(CONNMGR_GET_EVBASE(), conn_mon_p->ipaddr, conn_mon_p->dev_name,
                                NETCHECK_USE_PING, on_idle_ping_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
         if (rc < 0) {
-            AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure");
+            AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure", __func__);
         }
     }
 
@@ -515,13 +538,13 @@ static void on_bring_up_echo_check(int error, void *context)
 {
     cm_conn_monitor_cb_t *conn_mon_p = (cm_conn_monitor_cb_t *)context;
     if (conn_mon_p == NULL) {
-        AFLOG_ERR("%s_context");
+        AFLOG_ERR("%s_context", __func__);
         return;
     }
     if (!error) { // This interface is alive
         if (((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) && ((conn_mon_p->flags & CM_MON_FLAGS_PREV_ACTIVE) == 0))  {
             cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SS);
-            AFLOG_INFO("%s_alive:link_status=%s(%d):interface is alive",
+            AFLOG_INFO("%s_alive:link_status=%s(%d):interface is alive", __func__,
                        NETCONN_STATUS_STR[conn_mon_p->dev_link_status], conn_mon_p->dev_link_status);
         }
         else {
@@ -633,7 +656,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, conn_mon_p->dev_name,
                                        NETCHECK_USE_ECHO, on_idle_echo_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
                 if (rc < 0) {
-                    AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure");
+                    AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure", __func__, errno);
                 }
             } // !WAN
         }
@@ -688,7 +711,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                         int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, conn_mon_p->dev_name,
                                                NETCHECK_USE_ECHO, on_bring_up_echo_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
                         if (rc < 0) {
-                            AFLOG_ERR("_%s_:errno=%d:unrecoverable netcheck failure", __func__, errno);
+                            AFLOG_ERR("%s_netcheck:errno=%d:unrecoverable netcheck failure", __func__, errno);
                         }
 
                         if (old_link_status != conn_mon_p->dev_link_status) {
