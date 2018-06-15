@@ -18,22 +18,25 @@
 #include "af_attr_client.h"
 #include "ril.h"
 #include "build_info.h"
+#include "../include/signal_tracker.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 static void wan_attr_on_close(int status, void *context);
 
-#define RSSI_REPORTING_INTERVAL_SECONDS 5
+/* Flag to indicate if we should periodically send signal strengh info */
+static uint8_t sReportRssi = 0;
+static struct event *sTimerEvent = NULL;
+
+#define RSCP_REPORTING_INTERVAL_SECONDS 5
+#define NUM_RSRP_TO_AVERAGE 8
+#define RSRP_DIFF_TO_REPORT 3
 
 typedef enum {
     BIT_RATE_STATE_NONE = 0,
     BIT_RATE_STATE_FETCHING_USAGE,
     BIT_RATE_STATE_FETCHING_UPTIME
 } bit_rate_state_t;
-
-/* Flag to indicate if we should periodically send signal strengh info*/
-static uint8_t sReportRssi = 0;
-static struct event *sTimerEvent = NULL;
 
 struct bit_rate_struct {
     int32_t usage;
@@ -60,14 +63,17 @@ static void on_report_rssi_timer(evutil_socket_t fd, short what, void *arg)
         AFLOG_ERR("wifistad_report_rssi_info:rc=%d:set failed", rc);
     }
 
-    uint8_t rsrpLE[2];
-    af_attr_store_uint16(rsrpLE, rsrp); /* rsrp will be less than 32768 */
-    rc = af_attr_set(AF_ATTR_WAN_WAN_RSRP, rsrpLE, sizeof(rsrpLE), NULL, NULL);
-    if (rc != AF_ATTR_STATUS_OK) {
-        AFLOG_WARNING("wifistad_report_rssi_info:rc=%d:set failed", rc);
+    rsrp = sigtrack_add(rsrp, RSRP_DIFF_TO_REPORT);
+    if (rsrp) {
+        uint8_t rsrpLE[2];
+        af_attr_store_uint16(rsrpLE, rsrp); /* rsrp will be less than 32768 */
+        rc = af_attr_set(AF_ATTR_WAN_WAN_RSRP, rsrpLE, sizeof(rsrpLE), NULL, NULL);
+        if (rc != AF_ATTR_STATUS_OK) {
+            AFLOG_WARNING("wifistad_report_rssi_info:rc=%d:set failed", rc);
+        }
     }
 
-    struct timeval tv = { RSSI_REPORTING_INTERVAL_SECONDS, 0 };
+    struct timeval tv = { RSCP_REPORTING_INTERVAL_SECONDS, 0 };
     evtimer_add(sTimerEvent, &tv);
 }
 
@@ -78,12 +84,13 @@ static void set_up_rssi_reporting(int on)
         sReportRssi = newValue;
         AFLOG_INFO("set_up_rssi_reporting:reportRssi=%d", sReportRssi);
         if (sReportRssi) {
+            sigtrack_clear(NUM_RSRP_TO_AVERAGE);
             sTimerEvent = evtimer_new(wand_get_evbase(), on_report_rssi_timer, NULL);
             if (sTimerEvent == NULL) {
                 AFLOG_ERR("set_up_rssi_reporting_timer:errno=%d", errno);
                 return;
             }
-            struct timeval tv = { RSSI_REPORTING_INTERVAL_SECONDS, 0 };
+            struct timeval tv = { RSCP_REPORTING_INTERVAL_SECONDS, 0 };
             evtimer_add(sTimerEvent, &tv);
         } else {
             evtimer_del(sTimerEvent);
@@ -310,7 +317,6 @@ static void wan_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t 
     }
 }
 
-
 int wan_ipc_init(struct event_base *base)
 {
     if (base == NULL) {
@@ -361,9 +367,8 @@ static void wan_reconn_to_attrd(evutil_socket_t fd, short events, void *arg)
         }
     }
     else {
-        AFLOG_ERR("wan_reconn_to_attrd:: event_base went bonkers.exit");
+        AFLOG_ERR("wan_reconn_to_attrd:base==NULL:event_base is incorrect; exit");
 
-        wan_ipc_shutdown();
         wand_shutdown();
         exit(1);
     }

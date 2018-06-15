@@ -1,11 +1,11 @@
 /*
- * wifistad_attr_callback.c
+ * wifistad_attributes.c
  *
  * This contains the definitions and data structures used for managing
  * the callback functions use in the communication with attrd, as well
  * the set, get attribute functionality.
  *
- * Copyright (c) 2016-present, Afero Inc. All rights reserved.
+ * Copyright (c) 2016-2018, Afero Inc. All rights reserved.
  *
  */
 
@@ -28,12 +28,13 @@
 #include "af_util.h"
 #include "afwp.h"
 #include "build_info.h"
+#include "../include/signal_tracker.h"
 
+#define RSSI_REPORTING_PERIOD_SEC	10
+#define NUM_RSSI_TO_AVERAGE			8
+#define RSSI_DIFF_TO_REPORT			4
 
-// timeout value for report to
-struct timeval   rpt_rssi_timeout = {10, 0};
-
-extern void  wifistad_close ();
+extern void wifistad_close();
 
 // on notification
 void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, void *context)
@@ -41,22 +42,23 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
 
 	if ((value == NULL) || (length <= 0)) {
-		AFLOG_ERR("wifistad_attr_on_notify:: invalid input, value_null=%d, length=%d",
-					(value == NULL), length);
+		AFLOG_ERR("%s_param:value_null=%d,length=%d", __func__, value==NULL, length);
 		return;
 	}
 
-	AFLOG_DEBUG2("wifistad_attr_on_notify:: attributeId=%d value=%s", attributeId, (char *)value);
+	AFLOG_DEBUG2("%s_info:attributeId=%d,value[0]=%d", __func__,attributeId,value[0]);
 	switch (attributeId) {
 		case AF_ATTR_ATTRD_REPORT_RSSI_CHANGES: //
 			{
-				uint8_t  report_rssi_change = *value;
+				uint8_t report_rssi_change = *value;
 				if (report_rssi_change == 1) {  // activate periodic rssi reporting
 					if (m->rpt_rssi_event) {
+						struct timeval rpt_rssi_timeout = { RSSI_REPORTING_PERIOD_SEC, 0 };
 						event_add(m->rpt_rssi_event, &rpt_rssi_timeout);
+						sigtrack_clear(NUM_RSSI_TO_AVERAGE);
 					}
 					else {
-						AFLOG_ERR("wifistad_attr_on_notify:: invalid rpt_rssi event");
+						AFLOG_ERR("%s_rssi_event:event=NULL:invalid rpt_rssi_event", __func__);
 					}
 				}
 				else {  // deactivate periodic rssi reporting
@@ -84,9 +86,9 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 				int8_t rssi = 0;  // as not connected
 				char *blank_str = " ";
 				uint8_t command = value[0];
-				AFLOG_INFO("wifistad_attr_on_notify:: command=%d", command);
+				AFLOG_INFO("%s_command:command=%d", __func__, command);
 				if (command == 2) { // we handle only clear user data
-					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset, update we are to disconnect");
+					AFLOG_INFO("%s_factory_reset_1::factory reset; update we are to disconnect", __func__);
 					// let's update the conclave service about these attributes:
 					// ssid, wifi steady state, wifi setup state, rssi
 					m->wifi_setup.setup_event = WPA_EVENT_ID_WIFI_CREDENTIALS;  //about wifi setup
@@ -102,7 +104,7 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 					af_attr_set(AF_ATTR_WIFISTAD_CONFIGURED_SSID, (uint8_t *)blank_str, 1,
 								wifista_attr_on_set_finished, NULL);
 
-					AFLOG_INFO("wifistad_attr_on_notify:: Factory reset - clear wifi user data");
+					AFLOG_INFO("%s_factory_reset_2::factory reset; clear wifi user data", __func__);
 
 					unlink(AFERO_WIFI_FILE);
 					af_wp_set_passphrase((uint8_t *)"");
@@ -122,14 +124,13 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 			break;
 
 		default:
-			AFLOG_WARNING("wifistad_attr_on_notify:: unhandled attribute=%d", attributeId);
+			AFLOG_WARNING("%s_unhandled:attribute=%d", __func__, attributeId);
 			break;
 	}
 	return;
 }
 
-
-// on_set:
+// on_owner_set
 // another client has changed an attribute this client owns
 // assume value - contains the key value pairs of ssid, and credentials.
 void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *value, int length, void *context)
@@ -137,15 +138,14 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 	wifi_cred_t    *wifi_cred = NULL;
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
 	int            err = 1;
-    int            status = AF_ATTR_STATUS_OK;
+	int            status = AF_ATTR_STATUS_OK;
 
 	if (value == NULL) {
-		AFLOG_ERR("wifistad_attr_on_owner_set:: invalid value=NULL");
+		AFLOG_ERR("%s_value_NULL", __func__);
 		return;
 	}
 
-
-	AFLOG_DEBUG2("wifistad_attr_on_owner_set:attributeId=%d", attributeId);
+	AFLOG_DEBUG2("%s_attribute:attributeId=%d", __func__, attributeId);
 
 	switch (attributeId) {
 		case AF_ATTR_WIFISTAD_CREDS:
@@ -158,8 +158,8 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 				memcpy(wifi_cred->ssid, hub_wifi_cred->ssid, HUB_SSID_LEN);
 				memcpy(wifi_cred->key,  hub_wifi_cred->key, HUB_WIFI_CRED_LEN);
 
-				AFLOG_INFO("wifistad_attr_on_owner_set::Recv WIFI credential(%s), post WIFI setup request",
-							wifi_cred->ssid);
+				AFLOG_INFO("%s_wifi_cred:ssid=%s:received Wi-Fi credentials; posting setup request",
+							__func__, wifi_cred->ssid);
 				WIFI_SETUP_CONNECT_AP(m, wifi_cred, m->assoc_info.id);
 
 				// let's update the service with our setup state formost:
@@ -177,11 +177,11 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 
 			if (err) {
 				if (wifi_cred == NULL) {
-					AFLOG_ERR("wifistad_attr_on_owner_set:: malloc failed");
+					AFLOG_ERR("%s_malloc", __func__);
 				}
 				else {
-					AFLOG_ERR("wifistad_attr_on_owner_set:: User SETUP failed, ssid=%s key_len=%d",
-							  hub_wifi_cred->ssid, len);
+					AFLOG_ERR("%s_setup_failed:ssid=%s,key_len=%d:user setup failed",
+							  __func__, hub_wifi_cred->ssid, len);
 				}
 				// set the WIFI_SETUP_STATE attribute so APPs can be notified.
 				m->wifi_setup.setup_state =((len==0) ? WIFI_STATE_HANDSHAKEFAILED : WIFI_STATE_NOTCONNECTED);
@@ -202,12 +202,12 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 				level = LOG_DEBUG_OFF;
 			}
 			g_debugLevel = level;
-			AFLOG_INFO("connmgr_attr_on_owner_set:i debug_level=%d", level);
+			AFLOG_INFO("%s_debug_level:debug_level=%d", __func__, level);
 			break;
 		}
 
 		default:
-			AFLOG_ERR("wifistad_attr_on_owner_set:: unhandled attributeId=%d", attributeId);
+			AFLOG_ERR("%s_unhandled:attributeId=%d", __func__, attributeId);
 			status = AF_ATTR_STATUS_NOT_IMPLEMENTED;
 			break;
 
@@ -215,32 +215,28 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 
 	int sendStatus = af_attr_send_set_response(status, setId);
 	if (sendStatus != AF_ATTR_STATUS_OK) {
-		AFLOG_ERR("connmgr_attr_on_owner_set_send:sendStatus=%d,status=%d,setId=%d", sendStatus, status, setId);
+		AFLOG_ERR("%s_set_send:sendStatus=%d,status=%d,setId=%d", __func__, sendStatus, status, setId);
 	}
 }
-
 
 // on_set_finished
 // For now - let's just log an error if set failed.
 void wifista_attr_on_set_finished(int status, uint32_t attributeId, void *context)
 {
 	if (status != AF_ATTR_STATUS_OK) {
-		AFLOG_ERR("wifista_attr_on_set_finished:: attributeId=%d, status=%d",
-				  attributeId, status);
+		AFLOG_ERR("%s_status:attributeId=%d,status=%d", __func__, attributeId, status);
 	}
-
-	return;
 }
 
 
-// on request
+// on_get_request
 // another client has requested an attribute this client owns
 void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *context)
 {
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
 	uint8_t		   len;
 
-	AFLOG_INFO("wifistad_attr_on_get_request:: get request for attribute=%d", attributeId);
+	AFLOG_INFO("%s_info:attribute=%d", __func__, attributeId);
 
 	switch (attributeId) {
 		case AF_ATTR_WIFISTAD_AP_LIST:
@@ -252,7 +248,7 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 
 		case AF_ATTR_WIFISTAD_CONFIGURED_SSID:
 			len = strlen(m->assoc_info.ssid);
-			AFLOG_DEBUG2("wifistad_attr_on_get_request::ssid=%s, len=%d", m->assoc_info.ssid, len);
+			AFLOG_DEBUG2("%s_ssid:ssid=%s,len=%d", __func__, m->assoc_info.ssid, len);
 			if (len > 0) {
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
 										  (uint8_t *)&m->assoc_info.ssid[0], len);
@@ -270,21 +266,21 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 			break;
 
 		case AF_ATTR_WIFISTAD_WIFI_SETUP_STATE:  // only have meaning during wifi setup
-			AFLOG_DEBUG2("wifistad_attr_on_get_request:: reply setup_state=%d", m->wifi_setup.setup_state);
+			AFLOG_DEBUG2("%s_setup_state:setup_state=%d", __func__, m->wifi_setup.setup_state);
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
 									  (uint8_t *)&m->wifi_setup.setup_state, sizeof(uint8_t));
 			break;
 
 
 		case AF_ATTR_WIFISTAD_WIFI_STEADY_STATE: // have meaning outside wifi setup
-			AFLOG_DEBUG2("wifistad_attr_on_get_request:: reply steady_state=%d", m->wifi_steady_state);
+			AFLOG_DEBUG2("%s_steady_state:steady_state=%d", __func__, m->wifi_steady_state);
 			af_attr_send_get_response(AF_ATTR_STATUS_OK, getId,
 									  (uint8_t *)&m->wifi_steady_state, sizeof(uint8_t));
 			break;
 
 		case AF_ATTR_WIFISTAD_DEBUG_LEVEL : {
 				int8_t level = g_debugLevel;
-				AFLOG_INFO("wifistad_attr_on_get_request: debug_level=%d", level);
+				AFLOG_INFO("%s_debug_level:debug_level=%d", __func__, level);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&level, sizeof(int8_t));
 			}
 			break;
@@ -318,9 +314,10 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 
 		case AF_ATTR_WIFISTAD_WIFI_PAIRWISE_CIPHER:
 		case AF_ATTR_WIFISTAD_WIFI_GROUP_CIPHER: {
-			/* - Group (multicast and broadcast) cipher. Supported so far:
+			/* - Group (multicast and broadcast) cipher
 			 *    or
-			 * - Pairwise (unicast) cipher. Supported so far:
+			 * - Pairwise (unicast) cipher
+			 * Supported so far:
 			 * 0 - None
 			 * 1 - WEP 40 bit
 			 * 2 - WEP 104 bit
@@ -346,7 +343,7 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 				else if (strstr(cipher_p, "NONE") != NULL) {
 					value = 0;
 				}
-				AFLOG_INFO("wifistad_attr_on_get_request: attributeId=%d,  cipher=%d", attributeId, value);
+				AFLOG_INFO("%s_cipher:attributeId=%d,cipher=%d", __func__, attributeId, value);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
 			}
 			break;
@@ -360,16 +357,12 @@ void wifistad_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *co
 }
 
 
-//
 // the attribute client library either opened successfully or failed to open
 void wifistad_attr_on_open(int status, void *context)
 {
 	if (status != AF_ATTR_STATUS_OK) {
-		AFLOG_ERR("wifista_attr_on_open:: open failed, status=%d", status);
-		return;
+		AFLOG_ERR("%s_failed:status=%d", __func__, status);
 	}
-
-	return;
 }
 
 
@@ -379,25 +372,27 @@ void wifista_report_rssi_tmout_handler (evutil_socket_t fd, short events, void *
 {
 	int rc;
 
-	int8_t rssi = wpa_get_conn_network_rssi();
-	rc = af_attr_set(AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
-					 wifista_attr_on_set_finished, NULL);
-	if (rc != AF_ATTR_STATUS_OK) {
-		AFLOG_ERR("wifistad_report_rssi_change:: rssi reporting failed, rssi=%d", rssi);
+	int8_t rssi = sigtrack_add(wpa_get_conn_network_rssi(), RSSI_DIFF_TO_REPORT);
+	if (rssi) {
+		/* RSSI is different enough to be reported */
+		rc = af_attr_set(AF_ATTR_WIFISTAD_WIFI_RSSI, (uint8_t *)&rssi, sizeof(uint8_t),
+						 wifista_attr_on_set_finished, NULL);
+		if (rc != AF_ATTR_STATUS_OK) {
+			AFLOG_ERR("%s_failed:rssi=%d,rc=%d", __func__, rssi, rc);
+		}
 	}
-	return;
 }
 
 
 /* set the steady state and also send out a set to the other daemons know.
  */
-void wifista_set_wifi_steady_state(uint8_t    steady_state)
+void wifista_set_wifi_steady_state(uint8_t steady_state)
 {
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
 	static uint8_t reported_steady_state_pending = 0;
 
 
-	AFLOG_DEBUG2("wifista_set_wifi_steady_state:: %d -> %d", m->wifi_steady_state, steady_state);
+	AFLOG_DEBUG2("%s_info:old_steady_state=%d,new_steady_state=%d", __func__, m->wifi_steady_state, steady_state);
 
 
 	/* -------------------------- */
@@ -414,11 +409,11 @@ void wifista_set_wifi_steady_state(uint8_t    steady_state)
 
 	if (m->wifi_steady_state != steady_state) {
 		int rc;
-		AFLOG_DEBUG2("wifista_set_wifi_steady_state:: Sendng WIFI_STEADY_STATE=%d to service", steady_state);
+		AFLOG_DEBUG2("%s_attr_set:wifi_steady_state=%d", __func__, steady_state);
 		rc = af_attr_set(AF_ATTR_WIFISTAD_WIFI_STEADY_STATE, (uint8_t *)&steady_state, sizeof(uint8_t),
 						 wifista_attr_on_set_finished, NULL);
 		if (rc != AF_ATTR_STATUS_OK) {
-			AFLOG_ERR("wifistad_report_rssi_change:: set failed (WIFI_STEADY_STATE=%d)", steady_state);
+			AFLOG_ERR("%s_failed:rc=%d,wifi_steady_state=%d", __func__, rc, steady_state);
 		}
 
 		if (m->wifi_setup.who_init_setup != USER_REQUEST) {
@@ -434,3 +429,4 @@ void wifista_set_wifi_steady_state(uint8_t    steady_state)
 	m->wifi_steady_state = steady_state;
 	return;
 }
+

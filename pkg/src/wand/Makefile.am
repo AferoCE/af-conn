@@ -2,9 +2,9 @@ AUTOMAKE_OPTIONS = subdir-objects
 bin_PROGRAMS = wand
 
 if WAN_RIL_HL7xxx
-wand_SOURCES = at_HL7xxx.c ril_HL7xxx.c wand.c net.c server.c
+wand_SOURCES = at_HL7xxx.c ril_HL7xxx.c wand.c net.c server.c ../common/signal_tracker.c
 else
-wand_SOURCES = at_ELS61.c ril_ELS61.c wand.c net.c server.c
+wand_SOURCES = at_ELS61.c ril_ELS61.c wand.c net.c server.c ../common/signal_tracker.c
 endif
 
 if BUILD_TARGET_DEBUG

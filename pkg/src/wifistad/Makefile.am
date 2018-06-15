@@ -18,7 +18,8 @@ wifistad_SOURCES =	wifistad.c \
 					wpa_wifi_setup.c \
 					wifistad_attributes.c \
 					../connd/hub_config.c \
-					../common/netcheck_async.c
+					../common/netcheck_async.c \
+					../common/signal_tracker.c
 
 wifistad_LDADD = -laf_attr -laf_ipc -lafwp -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt
 wifistad_CFLAGS = -Wall -std=gnu99 -I../../include -DCONFIG_CTRL_IFACE -DCONFIG_CTRL_IFACE_UNIX -D_GNU_SOURCE $(CFLAGS_BUILD_TARGET)
