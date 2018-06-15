@@ -980,6 +980,15 @@ int ril_deactivate_data_call(void)
     return retVal;
 }
 
+static int rsrp_to_bars(int rsrp)
+{
+    if (rsrp > -85) return 5;
+    else if (rsrp > -95) return 4;
+    else if (rsrp > -105) return 3;
+    else if (rsrp > -115) return 2;
+    else return 1;
+}
+
 #define SNPRINTF(_buf,_space,_fmt,...) ((_space) > 1 ? snprintf((_buf), (_space), _fmt, ##__VA_ARGS__) : 0)
 
 int sLastMCC=0;
@@ -1018,6 +1027,7 @@ int ril_get_ps_attach(void)
         psAttach = 0;
         ril_lock_wan_status();
         sWanStatus.psState = 0;
+        sWanStatus.bars = 0;
         ril_unlock_wan_status();
     } else {
         AFLOG_WARNING("ril_get_ps_attach:attach:attached=%s:bad attach value", tokens[0]);
@@ -1060,6 +1070,7 @@ int ril_get_ps_attach(void)
             float rsrq;
             sscanf(tokens[13], "%f", &rsrq);
             sWanStatus.rsrqX10 = (int16_t)(rsrq * 10.0);
+            sWanStatus.bars = rsrp_to_bars(sWanStatus.rsrp);
             ril_unlock_wan_status();
         }
     }
