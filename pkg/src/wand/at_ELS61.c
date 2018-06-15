@@ -227,7 +227,7 @@ void at_end_cmds(void)
 
 static void prv_rspbuf_clear(void);
 
-#define NUM_AT_SEND_TRIES 3
+#define NUM_AT_SEND_TRIES 1
 
 at_result_t at_send_cmd(at_response_type_t rspType, char *prefix, char *opt, int timeout)
 {
