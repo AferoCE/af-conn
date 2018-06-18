@@ -431,7 +431,7 @@ int ril_select_network(ril_data_call_request_t *dataCallReq)
         int res = at_send_cmd(AT_RSP_TYPE_OK, AT_CMD_NETWORK_SELECTION, "=0", SELECT_NETWORK_TIMEOUT);
         if (res != AT_RESULT_SUCCESS) {
             int err = at_rsp_error();
-            AFLOG_WARNING("prv_select_network:res=%d:can't select network", res, err);
+            AFLOG_WARNING("prv_select_network:res=%d,err=%d:can't select network", res, err);
             if (err == COPS_ERR_BUSY) {
                 waiting = 1;
                 sleep(1);
@@ -1115,7 +1115,7 @@ int ril_get_ps_attach(void)
             nbr_count++;
         }
     }
-    AFLOG_DEBUG3("wan_neighbor_info:%s", &sWanStatus.neighborInfo);
+    AFLOG_DEBUG3("wan_neighbor_info:%s", sWanStatus.neighborInfo);
 
 exit:
     at_end_cmds();

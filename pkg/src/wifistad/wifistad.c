@@ -255,7 +255,7 @@ static void set_setup_timer(void)
 	else {
 		struct timespec now;
 		clock_gettime(CLOCK_MONOTONIC, &now);
-		AFLOG_DEBUG2("set_setup_timer:end=%d,start=%d", now.tv_sec, s_start_conn_time);
+		AFLOG_DEBUG2("set_setup_timer:end=%ld,start=%ld", now.tv_sec, s_start_conn_time);
 
 		if (now.tv_sec - s_start_conn_time < SETUP_TIMER_CAP - 5) {
 			AFLOG_DEBUG1("set_setup_timer:timeout=%d:initiate timer for wifi setup", SETUP_TIMER_INC);
@@ -1100,7 +1100,7 @@ void prv_wpa_event_callback(evutil_socket_t fd, short evts, void *param)
 
 		case WPA_EVENT_ID_CFG_CHECK: {
 				if ((s_wpa_state == WPA_STATE_READY) || (s_wpa_state == WPA_STATE_CONNECTING)) {
-					AFLOG_DEBUG1("prv_wpa_periodic_check:s_start_conn_time=%d,s_has_wifi_cfg_info=%d",
+					AFLOG_DEBUG1("prv_wpa_periodic_check:s_start_conn_time=%ld,s_has_wifi_cfg_info=%d",
 								 s_start_conn_time, s_has_wifi_cfg_info);
 					if (!s_start_conn_time && s_has_wifi_cfg_info) {
 						AFLOG_INFO("prv_wpa_periodic_check:: NOT_CONNECTED but configured. Re-try");

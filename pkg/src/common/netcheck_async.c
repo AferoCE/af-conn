@@ -231,7 +231,7 @@ echo_check (const char *host, char *itf_string) {
     AFLOG_DEBUG3("%s_enter", __func__);
 
     if ((host == NULL)) {
-        AFLOG_ERR("echo_check_getaddrinfo:host_NULL=%d:", host);
+        AFLOG_ERR("echo_check_getaddrinfo:host_NULL=%d:", host==NULL);
         return -1;
     }
 

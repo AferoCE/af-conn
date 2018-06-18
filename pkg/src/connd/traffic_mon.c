@@ -69,7 +69,7 @@ static uint32_t  cm_calc_netmask_length(uint32_t   mask)
 	for (count=0; mask; count++) {
 		mask &= mask - 1;  // clear the least significant bit set
 	}
-	AFLOG_DEBUG3("Netmask lenght is: %d ", count);
+	AFLOG_DEBUG3("Netmask length is: %d ", count);
 	return count;
 }
 
@@ -218,11 +218,11 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
         conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SU;
     }
 
-    AFLOG_INFO("cm_conn_mon_init:dev=%s,inuse=%s,link_dev_status=(%d-%s)",
+    AFLOG_INFO("cm_conn_mon_init:dev=%s,inuse=%s,link_dev_status=%s(%d)",
                dev,
                ((conn_mon_p == CM_GET_INUSE_NETCONN_CB()) ? "TRUE":"FALSE"),
-               conn_mon_p->dev_link_status,
-               NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
+               NETCONN_STATUS_STR[conn_mon_p->dev_link_status],
+               conn_mon_p->dev_link_status);
 
     return (pcapfd);
 }
@@ -527,7 +527,7 @@ static void on_idle_echo_check(int error, void *context)
         int rc = check_network(CONNMGR_GET_EVBASE(), conn_mon_p->ipaddr, conn_mon_p->dev_name,
                                NETCHECK_USE_PING, on_idle_ping_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
         if (rc < 0) {
-            AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure", __func__);
+            AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure", __func__, errno);
         }
     }
 
@@ -614,7 +614,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
 
         /* Periodically print a log */
         if (conn_mon_p->idle_count % CONNMGR_DWD_CHECK_INTERVALS == (CONNMGR_DWD_CHECK_INTERVALS-1)) {
-            AFLOG_DEBUG2("cm_mon_tmout_handler:itf=%s,flags=%d,link_status=%d,idle_count=%d,inuse_itf=%s,num_netconn:%d",
+            AFLOG_DEBUG2("cm_mon_tmout_handler:itf=%s,flags=%d,link_status=%d,idle_count=%d,inuse_itf=%s,num_netconn=%d",
                          conn_mon_p->dev_name, conn_mon_p->flags,
                          conn_mon_p->dev_link_status, conn_mon_p->idle_count,
                          CM_GET_INUSE_NETCONN_CB()->dev_name,
@@ -630,10 +630,10 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFDOWN_SX) ||
                 (conn_mon_p->dev_link_status == NETCONN_STATUS_ITFNOTSUPP_SX)) {
 
-                AFLOG_DEBUG2("cm_mon_tmout_handler:itf=(%s),dev_link_status=%s(%d):nothing to do",
+                AFLOG_DEBUG2("cm_mon_tmout_handler:itf=%s,dev_link_status=%s(%d):nothing to do",
                              conn_mon_p->dev_name,
-                             conn_mon_p->dev_link_status,
-                             NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
+                             NETCONN_STATUS_STR[conn_mon_p->dev_link_status],
+                             conn_mon_p->dev_link_status);
                 return;
             }
 
@@ -668,10 +668,10 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 // the interface is UP, but service FAILED
                 cm_set_itf_down(conn_mon_p, NETCONN_STATUS_ITFUP_SF);
 
-                AFLOG_INFO("link_down:device=%s,old_status=(%d-%s),new_status=(%d-%s):",
-                           conn_mon_p->dev_name,
-                           old_link_status, NETCONN_STATUS_STR[old_link_status],
-                           conn_mon_p->dev_link_status, NETCONN_STATUS_STR[conn_mon_p->dev_link_status]);
+                AFLOG_INFO("%s_link_down:device=%s,old_status=%s(%d),new_status=%s(%d):",
+                           __func__, conn_mon_p->dev_name,
+                           NETCONN_STATUS_STR[old_link_status], old_link_status,
+                           NETCONN_STATUS_STR[conn_mon_p->dev_link_status], conn_mon_p->dev_link_status);
 
                 if (conn_mon_p == CM_GET_INUSE_NETCONN_CB()) {
                     /* this is the current INUSE network, passing traffic network went down.
@@ -697,8 +697,8 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                     if (conn_mon_p->pcap_handle != NULL) {
                         /* update the link status and increment monitored network counter */
                         if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) && ((conn_mon_p->flags & CM_MON_FLAGS_PREV_ACTIVE) == 0)) {
-                            AFLOG_DEBUG1("cm_mon_tmout_handler:: dev=%s, link becomes active",
-                                         conn_mon_p->dev_name);
+                            AFLOG_DEBUG1("%s_activate:dev=%s:link becomes active",
+                                         __func__, conn_mon_p->dev_name);
                             cm_set_itf_up(conn_mon_p, NETCONN_STATUS_ITFUP_SU);
                         }
 
@@ -715,8 +715,8 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                         }
 
                         if (old_link_status != conn_mon_p->dev_link_status) {
-                            AFLOG_INFO("link_up:device=%s,old_status=%s(%d),new_status=%s(%d):",
-                                       conn_mon_p->dev_name,
+                            AFLOG_INFO("%s_link_up:device=%s,old_status=%s(%d),new_status=%s(%d):",
+                                       __func__, conn_mon_p->dev_name,
                                        NETCONN_STATUS_STR[old_link_status], old_link_status,
                                        NETCONN_STATUS_STR[conn_mon_p->dev_link_status], conn_mon_p->dev_link_status);
                         }
@@ -824,10 +824,10 @@ cm_on_recv_hotplug_events (evutil_socket_t fd, short events, void *arg)
                 /* close the packet monitor session if it is open */
                 connmgr_close_pcap_session(net_conn_p->my_idx);
 
-                AFLOG_INFO("link_down_hotplug:device=%s,old_link_status=(%d-%s),new_link_status=(%d-%s)",
+                AFLOG_INFO("link_down_hotplug:device=%s,old_link_status=%s(%d),new_link_status=%s(%d)",
                            net_conn_p->dev_name,
-                           old_link_status, NETCONN_STATUS_STR[old_link_status],
-                           net_conn_p->dev_link_status, NETCONN_STATUS_STR[net_conn_p->dev_link_status]);
+                           NETCONN_STATUS_STR[old_link_status], old_link_status,
+                           NETCONN_STATUS_STR[net_conn_p->dev_link_status], net_conn_p->dev_link_status);
 
                 cm_check_update_inuse_netconn(NETCONN_STATUS_ITFDOWN_SU, net_conn_p);
             }
@@ -991,9 +991,9 @@ void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
     net_conn_p->idle_count  = 0;
 
     cm_netconn_count = cm_netconn_count + 1;
-    AFLOG_DEBUG1("cm_set_itf_up:: dev:%s, status=(%d-%s), cm_netconn_count:%d",
+    AFLOG_DEBUG1("cm_set_itf_up:: dev:%s, status=%s(%d), cm_netconn_count:%d",
                  net_conn_p->dev_name,
-                 new_status, NETCONN_STATUS_STR[new_status],
+                 NETCONN_STATUS_STR[new_status], new_status,
                  cm_netconn_count);
 
     /* Use the idx as an easy way to perform the check: is it wireless dev (wlan0)?
@@ -1035,9 +1035,9 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
     }
     net_conn_p->dev_link_status = new_status;
 
-    AFLOG_DEBUG1("cm_set_itf_down:: dev:%s, status=(%d-%s), cm_netconn_count:%d",
+    AFLOG_DEBUG1("cm_set_itf_down:: dev:%s, status=%s(%d), cm_netconn_count:%d",
                  net_conn_p->dev_name,
-                 new_status, NETCONN_STATUS_STR[new_status],
+                 NETCONN_STATUS_STR[new_status], new_status,
                  cm_netconn_count);
 
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
@@ -1055,7 +1055,7 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
     if (net_conn_p == NULL)
         return;
 
-    AFLOG_DEBUG1("cm_netconn_up_detected:: dev=%s,flags=%d,link_status=%d,pcap_handle=%p)",
+    AFLOG_DEBUG1("cm_netconn_up_detected:dev=%s,flags=%d,link_status=%d,pcap_handle=%p",
                  net_conn_p->dev_name, net_conn_p->flags,
                  net_conn_p->dev_link_status, net_conn_p->pcap_handle);
 
@@ -1125,10 +1125,10 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         evtimer_add(net_conn_p->conn_timer_event, &net_conn_p->mon_tmout_val);
     }
 
-    AFLOG_INFO("link_up:device=%s,flags=%d,old_status=(%d-%s),new_status=(%d-%s)",
+    AFLOG_INFO("link_up:device=%s,flags=%d,old_status=%s(%d),new_status=%s(%d)",
                net_conn_p->dev_name, net_conn_p->flags,
-               old_status, NETCONN_STATUS_STR[old_status],
-               net_conn_p->dev_link_status, NETCONN_STATUS_STR[net_conn_p->dev_link_status]);
+               NETCONN_STATUS_STR[old_status], old_status,
+               NETCONN_STATUS_STR[net_conn_p->dev_link_status], net_conn_p->dev_link_status);
 
     if (old_status != net_conn_p->dev_link_status) {
         //cm_netconn_status_notify();

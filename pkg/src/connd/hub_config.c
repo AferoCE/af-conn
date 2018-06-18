@@ -9,7 +9,9 @@
 
 #include <stdio.h>
 #include <errno.h>
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
+#endif
 #include <string.h>
 char *strcasestr(const char *haystack, const char *needle);
 #include <pthread.h>
