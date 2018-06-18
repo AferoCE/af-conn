@@ -14,7 +14,7 @@ CFLAGS_BUILD_TARGET = -DBUILD_TARGET_RELEASE
 endif
 
 wand_LDADD = -laf_attr -laf_ipc -laf_util -lpthread -levent -levent_pthreads -lm -lpcap -lrt -lresolv
-wand_CFLAGS = -Wall $(CFLAGS_BUILD_TARGET)
+wand_CFLAGS = -Wall $(CFLAGS_BUILD_TARGET) -std=gnu99
 
 .PHONY : build_info.h
 $(wand_SOURCES) : build_info.h
