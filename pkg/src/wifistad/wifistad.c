@@ -230,36 +230,40 @@ static void push_event_for_timer(evutil_socket_t fd, short what, void *arg)
 	queue_event((wifistad_event_t)arg);
 }
 
-// we want to cap the wifi setup at ~1 minute or 60 seconds
-#define SETUP_TIMER_CAP		60
+// we want to cap the wifi setup at slightly less than one minute
+#define SETUP_TIMER_CAP		55
 // this is the amount of time we allow for one Wi-Fi setup operation
 #define SETUP_TIMER_INC		20
 
 // This function resets the setup timer out by SETUP_TIMER_INC (20 sec)
 // basically kicking the timeout of the Wi-Fi setup can down the road.
-// However, it imposes a cap of 60 seconds total for the Wi-Fi setup.
+// However, it imposes a cap of 55 seconds total for the Wi-Fi setup.
 // When the setup timer expires, and the Wi-Fi connection is still not
 // complete, we both report the setup state to the app and revert to the
 // previous good setup, if one is available.
+// Note: s_start_conn_time is reset to zero when Wi-Fi setup succeeds or
+// the timer expires
 static time_t s_start_conn_time = 0;
 
 static void set_setup_timer(void)
 {
-	if (s_start_conn_time == 0) {
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		s_start_conn_time = now.tv_sec;
-		AFLOG_DEBUG1("set_setup_timer:timeout=%d:initiate timer for wifi setup", SETUP_TIMER_INC);
-		set_timer(SETUP_TIMER, SETUP_TIMER_INC);
-	}
-	else {
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		AFLOG_DEBUG2("set_setup_timer:end=%ld,start=%ld", now.tv_sec, s_start_conn_time);
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
 
-		if (now.tv_sec - s_start_conn_time < SETUP_TIMER_CAP - 5) {
-			AFLOG_DEBUG1("set_setup_timer:timeout=%d:initiate timer for wifi setup", SETUP_TIMER_INC);
-			set_timer(SETUP_TIMER, SETUP_TIMER_INC);
+	if (s_start_conn_time == 0) {
+		s_start_conn_time = now.tv_sec;
+	}
+	int elapsed = (int)(now.tv_sec - s_start_conn_time); /* in the range of 0 - 80, so fits in int */
+	if (elapsed + SETUP_TIMER_INC <= SETUP_TIMER_CAP) {
+		AFLOG_DEBUG1("%s_update:timeout=%d,elapsed=%d:initialize/update timer for wifi setup",
+					 __func__, SETUP_TIMER_INC, elapsed);
+		set_timer(SETUP_TIMER, SETUP_TIMER_INC);
+	} else {
+		/* add time if there still is time */
+		if (SETUP_TIMER_CAP > elapsed) {
+			AFLOG_DEBUG1("%s_cap:timeout=%d,elapsed=%d,cap=%d:cap timer for wifi setup",
+						 __func__, SETUP_TIMER_CAP - elapsed, elapsed, SETUP_TIMER_CAP);
+			set_timer(SETUP_TIMER, SETUP_TIMER_CAP - elapsed);
 		}
 	}
 }
