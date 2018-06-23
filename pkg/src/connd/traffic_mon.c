@@ -478,6 +478,18 @@ static void on_idle_ping_check(int error, void *context)
         // The interface is up; reset the idle count
         conn_mon_p->idle_count = 0;
 
+        if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
+            /* This interface was not active. This means it just received some
+             * traffic from this connection.  Let's switch check to see if we
+             * should switch over to it
+             */
+            AFLOG_DEBUG1("%s_succeeded:dev=%s:", __func__, conn_mon_p->dev_name);
+
+            cm_netconn_up_detected(conn_mon_p);
+
+        }
+
+#if 0
         // if we haven't reported that this interface is up, do it now
         if ((CONNMGR_GET_ATTR_PENDING() == 1) &&
             (CM_GET_INUSE_NETCONN_CB() == conn_mon_p)) {
@@ -486,6 +498,7 @@ static void on_idle_ping_check(int error, void *context)
 
             CONNMGR_SET_ATTR_PENDING(0);
         }
+#endif
     }
     connmgr_mon_increment_ping_stat(conn_mon_p->my_idx);
     conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
@@ -504,6 +517,18 @@ static void on_idle_echo_check(int error, void *context)
     if (!error) { // the interface is up; reset the idle count
         conn_mon_p->idle_count = 0;
 
+        if ((conn_mon_p->flags & CM_MON_FLAGS_CONN_ACTIVE) == 0) {
+            /* This interface was not active. This means it just received some
+             * traffic from this connection.  Let's switch check to see if we
+             * should switch over to it
+             */
+            AFLOG_DEBUG1("%s_succeeded:dev=%s:", __func__, conn_mon_p->dev_name);
+
+            cm_netconn_up_detected(conn_mon_p);
+
+        }
+
+#if 0
         // if we haven't reported that this interface is up, do it now
         if ((CONNMGR_GET_ATTR_PENDING() == 1) &&
             (CM_GET_INUSE_NETCONN_CB() == conn_mon_p)) {
@@ -512,13 +537,17 @@ static void on_idle_echo_check(int error, void *context)
 
             CONNMGR_SET_ATTR_PENDING(0);
         }
+#endif
 
+#if 0
         if (conn_mon_p->dev_link_status != NETCONN_STATUS_ITFUP_SS) {
             conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
 
             // Let's see if we need to switch to this network
             cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SS, conn_mon_p);
         }
+#endif
+
         conn_mon_p->flags &= ~CM_MON_FLAGS_IN_NETCHECK;
     } else {      // echo check failed
         AFLOG_DEBUG1("%s_echo_failed:error=%d:trying ping", __func__, error);
