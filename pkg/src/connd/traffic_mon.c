@@ -682,6 +682,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
                 // send an echo, which has two effects:
                 // 1) check if network is alive
                 // 2) put some traffic on the network
+                conn_mon_p->flags |= CM_MON_FLAGS_IN_NETCHECK;
                 int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, conn_mon_p->dev_name,
                                        NETCHECK_USE_ECHO, on_idle_echo_check, conn_mon_p, NETCHECK_TIMEOUT_MS);
                 if (rc < 0) {
