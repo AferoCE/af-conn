@@ -738,7 +738,7 @@ uint8_t prv_get_next_master(char **bssid, wifista_ap_t *ap, uint8_t *is_more)
 			*bssid = tok[0];
 			ssid_len = strlen(tok[4]);
 			if (ssid_len > WIFISTA_SSID_LEN) {
-			        return (-1);
+				return (-1);
 			}
 
 			strncpy(ap->ssid, tok[4], ssid_len);
@@ -1355,5 +1355,10 @@ int8_t file_exists(const char *filename)
 void wifistad_set_wifi_cfg_info(uint8_t has_cfg)
 {
 	s_has_wifi_cfg_info = has_cfg;
+}
+
+void wifistad_queue_netcheck(void)
+{
+	queue_event(WIFISTAD_EVENT_DO_NETCHECK);
 }
 

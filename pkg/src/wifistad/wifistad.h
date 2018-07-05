@@ -90,5 +90,6 @@ extern void wifista_attr_on_set_finished(int status, uint32_t attributeId, void 
 
 // misc
 extern void wifistad_set_wifi_cfg_info(uint8_t has_cfg);
+extern void wifistad_queue_netcheck(void);
 
 #endif //_WIFISTAD_H_

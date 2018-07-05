@@ -70,7 +70,10 @@ void wifistad_attr_on_notify(uint32_t attributeId, uint8_t *value, int length, v
 			break;
 
 		case AF_ATTR_CONNMGR_NETWORK_TYPE:
-			// do nothing currently (but.....)
+			if (value[0] == 0xff) {
+				/* kick off an echo check */
+				wifistad_queue_netcheck();
+			}
 			break;
 
 		case AF_ATTR_HUBBY_COMMAND: {
