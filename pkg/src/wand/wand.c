@@ -864,20 +864,3 @@ char *wan_apn(void)
 {
     return sDataCallReq.apn;
 }
-
-uint8_t wan_interface_state(void)
-{
-    switch(sWandState) {
-        case WAND_STATE_OFF :
-            return WAN_ITF_STATE_NOT_AVAILABLE;
-        case WAND_STATE_WAITING_FOR_DOWN :
-        case WAND_STATE_WAITING_FOR_UP :
-        case WAND_STATE_WAITING_FOR_DATA :
-            return WAN_ITF_STATE_PENDING;
-        case WAND_STATE_DATA :
-            return WAN_ITF_STATE_UP;
-        default :
-            break;
-    }
-    return WAN_ITF_STATE_NOT_AVAILABLE;
-}

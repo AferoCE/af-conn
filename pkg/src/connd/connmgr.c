@@ -33,9 +33,9 @@
 #include "af_ipc_common.h"
 #include "af_ipc_server.h"
 #include "af_log.h"
-#include "connmgr_attributes.h"
 #define NETIF_NAMES_ALLOCATE
 #include "connmgr.h"
+#include "connmgr_attributes.h"
 #include "traffic_mon.h"
 #include "connmgr_stats.h"
 #include "connmgr_util.h"

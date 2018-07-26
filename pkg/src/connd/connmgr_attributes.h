@@ -9,6 +9,7 @@
 #define _CONNMGR_ATTRIBUTES_H_
 
 #include "af_attr_client.h"
+#include "connmgr.h"
 
 
 /* The network type definition
@@ -24,6 +25,7 @@
 
 // APIs
 extern void cm_attr_set_network_type ();
+extern void cm_attr_set_itf_state(cm_conn_monitor_cb_t  *conn_cb_p);
 
 
 // attrd related callbacks

@@ -191,10 +191,6 @@ static void wan_get_request(uint32_t attrId, uint16_t getId, void *context)
             af_attr_store_int16(buf, wStatus->rsrp);
             af_attr_send_get_response(0, getId, buf, sizeof(wStatus->rsrp));
             break;
-        case AF_ATTR_WAN_WAN_ITF_STATE :
-            buf[0] = wan_interface_state();
-            af_attr_send_get_response(0, getId, buf, sizeof(int8_t));
-            break;
         case AF_ATTR_WAN_WAN_IMEISV :
             af_attr_send_get_response(0, getId, (uint8_t *)wStatus->imeisv, strlen(wStatus->imeisv) + 1);
             break;

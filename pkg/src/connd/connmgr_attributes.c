@@ -125,6 +125,102 @@ static int8_t  cm_get_network_type()
 }
 
 
+/* cm_get_itfstate_itf
+ *
+ * return the connection control block based on the interface attribute
+ */
+static cm_conn_monitor_cb_t *cm_get_itf_conn_cb(uint32_t attributeId)
+{
+    cm_conn_monitor_cb_t *conn_cb_p = NULL;
+
+    // which interface?
+    if (attributeId == AF_ATTR_CONNMGR_ETH_ITF_STATE) {
+        conn_cb_p = eth_mon_p;
+    } else if (attributeId == AF_ATTR_CONNMGR_WIFI_ITF_STATE) {
+        conn_cb_p = wlan_mon_p;
+    } else if (attributeId == AF_ATTR_CONNMGR_WAN_ITF_STATE) {
+        conn_cb_p = wan_mon_p;
+    }
+
+    return conn_cb_p;
+}
+
+
+static uint8_t cm_get_itf_state(cm_conn_monitor_cb_t *conn_cb_p)
+{
+    /* return value: (see device registry)
+     * 0 - Not Available/Broken
+     * 1 - Up with no internet connectivity
+     * 2 - Up with connection to Afero Cloud
+     */
+    if (conn_cb_p) {
+        // interface is up and service is reachable
+        if (conn_cb_p->dev_link_status == NETCONN_STATUS_ITFUP_SS) {
+            return (2);
+        }
+
+        // interface is up, but service is not checked or failed checking
+        if ((conn_cb_p->dev_link_status == NETCONN_STATUS_ITFUP_SU) ||
+            (conn_cb_p->dev_link_status == NETCONN_STATUS_ITFUP_SF) ) {
+           return (1);
+        }
+    }
+
+    // reaches here means that the interface is not availale.
+    return (0);
+}
+
+
+/* set the steady state and also send out a set to the other daemons know.
+ */
+void cm_attr_set_itf_state (cm_conn_monitor_cb_t  *conn_cb_p)
+{
+    int8_t   itf_state = cm_get_itf_state(conn_cb_p);
+    int32_t  attributeId = AF_ATTR_CONNMGR_ETH_ITF_STATE;  //default to ethernet
+    int32_t  rc;
+    uint8_t  set_attr = 1;
+    static int8_t   last_wan_itf_state = -1;
+    static int8_t   last_eth_itf_state = -1;
+    static int8_t   last_wifi_itf_state= -1;
+
+	if (conn_cb_p == NULL) {
+        return;
+    }
+
+	if (conn_cb_p->my_idx == CM_MONITORED_WAN_IDX) {
+		attributeId = AF_ATTR_CONNMGR_WAN_ITF_STATE;
+        if (last_wan_itf_state == itf_state) {
+            set_attr = 0;
+        }
+        last_wan_itf_state = itf_state;
+    }
+	else if (conn_cb_p->my_idx == CM_MONITORED_WLAN_IDX) {
+		attributeId = AF_ATTR_CONNMGR_WIFI_ITF_STATE;
+        if (last_wifi_itf_state == itf_state) {
+            set_attr = 0;
+        }
+        last_wifi_itf_state = itf_state;
+    }
+    else {
+        if (last_eth_itf_state == itf_state) {
+            set_attr = 0;
+        }
+        last_eth_itf_state = itf_state;
+    }
+
+    if (set_attr) {
+        AFLOG_DEBUG1("cm_attr_set_itf_state:: attrId=%d, state=%d", attributeId, itf_state);
+        rc = af_attr_set(attributeId, (uint8_t *)&itf_state, sizeof(int8_t),
+                        connmgr_attr_on_set_finished, NULL);
+        if (rc != AF_ATTR_STATUS_OK) {
+            AFLOG_ERR("cm_attr_set_itf_state:: set failed for (itf_state=%d)", attributeId);
+        }
+    }
+
+    return;
+}
+
+
 /* set the steady state and also send out a set to the other daemons know.
  */
 void cm_attr_set_network_type ()
@@ -243,29 +339,14 @@ void connmgr_attr_on_get_request(uint32_t attributeId, uint16_t getId, void *con
 			break;
 
 		case AF_ATTR_CONNMGR_ETH_ITF_STATE:
-		case AF_ATTR_CONNMGR_WIFI_ITF_STATE: {
+		case AF_ATTR_CONNMGR_WIFI_ITF_STATE:
+		case AF_ATTR_CONNMGR_WAN_ITF_STATE:
+           {
 				/* 0 - Not Available/Broken
-				* 1 - Disabled
-				* 2 - Pending
-				* 3 - Up
-				*/
-				char  filename[64];
-				char  *itf=((attributeId == AF_ATTR_CONNMGR_WIFI_ITF_STATE) ? NETIF_NAME(WIFISTA_INTERFACE_0) : NETIF_NAME(ETH_INTERFACE_0));
-
-				memset (filename, 0, sizeof(filename));
-				sprintf(filename, "/sys/class/net/%s/operstate", itf);
-				AFLOG_INFO("connmgr_attr_on_get_request:: filename=%s", filename);
-				if (af_util_read_file(filename, buf, sizeof(buf)) > 0) {
-					if (IS_OPERSTATE_DOWN(buf)) {
-						value = 1; // disabled
-					}
-					else if (IS_OPERSTATE_UP(buf) == 1) {
-						value = 3; // up
-					}
-					else if (IS_OPERSTATE_DORMANT(buf) == 1) {
-						value = 2; // dormant
-					}
-				}
+                 * 1 - Up with no internet connectivity
+                 * 2 - Up with connection to Afero Cloud
+				 */
+                value = cm_get_itf_state( cm_get_itf_conn_cb(attributeId) );
 				AFLOG_INFO("connmgr_attr_on_get_request:: interface state=0x%02x", value);
 				af_attr_send_get_response(AF_ATTR_STATUS_OK, getId, (uint8_t *)&value, sizeof(int8_t));
             }

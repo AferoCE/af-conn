@@ -107,6 +107,7 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
         AFLOG_ERR("cm_conn_mon_init::%s - failed to get addr, ** NOT IN USE **, err:%s", dev, errbuf);
 
         conn_mon_p->dev_link_status = NETCONN_STATUS_ITFDOWN_SU;
+        cm_attr_set_itf_state(conn_mon_p);
         return (-1);
     }
     netp = ntohl(netp);
@@ -217,6 +218,9 @@ cm_conn_mon_init(struct event_base  *evBase, void *arg)
     else {
         conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SU;
     }
+    // update the itf state attributes (if it changes)
+    cm_attr_set_itf_state(conn_mon_p);
+
 
     AFLOG_INFO("cm_conn_mon_init:dev=%s,inuse=%s,link_dev_status=%s(%d)",
                dev,
@@ -579,6 +583,8 @@ static void on_bring_up_echo_check(int error, void *context)
         else {
             conn_mon_p->idle_count = 0;
             conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SS;
+            // update the itf state attributes (if it changes)
+            cm_attr_set_itf_state(conn_mon_p);
         }
 
         /* Let's see if we need to switch to this network */
@@ -588,6 +594,9 @@ static void on_bring_up_echo_check(int error, void *context)
             conn_mon_p->dev_link_status = NETCONN_STATUS_ITFUP_SF;
 
             cm_check_update_inuse_netconn(NETCONN_STATUS_ITFUP_SF, conn_mon_p);
+
+            // update the itf state attributes (if it changes)
+            cm_attr_set_itf_state(conn_mon_p);
         }
     }
 
@@ -632,6 +641,7 @@ cm_mon_tmout_handler (evutil_socket_t fd, short events, void *arg)
         AFLOG_ERR("cm_mon_tmout_handler:: arg is NUL");
         return;
     }
+
 
     if (events & EV_TIMEOUT) {  // on timeout in second(s) interval
 
@@ -993,6 +1003,14 @@ cm_on_recv_netlink_route_events (evutil_socket_t fd, short events, void *arg)
 				if (found && ((net_conn_p = cm_find_monitored_net_obj(ifname)) != NULL)) {
                     AFLOG_INFO("cm_on_recv_netlink_route_events::RTM_NEWADDR, call cm_netconn_up_detected:%s", ifname);
                     cm_netconn_up_detected(net_conn_p);
+
+                    /* Let echo tells us that this interface is GOOD or not */
+                    net_conn_p->flags |= CM_MON_FLAGS_IN_NETCHECK;
+                    int rc = check_network(CONNMGR_GET_EVBASE(), echo_service_host_p, net_conn_p->dev_name,
+                                           NETCHECK_USE_ECHO, on_bring_up_echo_check, net_conn_p, NETCHECK_TIMEOUT_MS);
+                    if (rc < 0) {
+                        AFLOG_ERR("%s_check_network:errno=%d:check network unrecoverable failure", __func__, errno);
+                    }
                 }
 			}
 			else if (h->nlmsg_type == RTMGRP_IPV4_IFADDR) {
@@ -1026,8 +1044,12 @@ void cm_set_itf_up(cm_conn_monitor_cb_t   *net_conn_p,
                  NETCONN_STATUS_STR[new_status], new_status,
                  cm_netconn_count);
 
+    // update the itf state attributes (if it changes)
+    cm_attr_set_itf_state(net_conn_p);
+
+
     /* Use the idx as an easy way to perform the check: is it wireless dev (wlan0)?
-     * Let's see update the wifi operation mode.
+     * Let's update the wifi operation mode.
      **/
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
         cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
@@ -1070,6 +1092,10 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
                  NETCONN_STATUS_STR[new_status], new_status,
                  cm_netconn_count);
 
+    // update the itf state attributes (if it changes)
+    cm_attr_set_itf_state(net_conn_p);
+
+
     if (net_conn_p->my_idx == CM_MONITORED_WLAN_IDX) {
         cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
     }
@@ -1080,7 +1106,6 @@ void cm_set_itf_down (cm_conn_monitor_cb_t   *net_conn_p,
 void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
 {
     int old_status;
-
 
     if (net_conn_p == NULL)
         return;
@@ -1118,6 +1143,8 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
         else {
             net_conn_p->dev_link_status = NETCONN_STATUS_ITFDOWN_SX;
             net_conn_p->flags &= ~CM_MON_FLAGS_CONN_ACTIVE;
+            cm_attr_set_itf_state(net_conn_p);
+
 
             // [HUB-813]
             // conn_init_func failed due to IPADDR not assigned yet. Wait for two monitor
@@ -1159,10 +1186,6 @@ void cm_netconn_up_detected(cm_conn_monitor_cb_t   *net_conn_p)
                net_conn_p->dev_name, net_conn_p->flags,
                NETCONN_STATUS_STR[old_status], old_status,
                NETCONN_STATUS_STR[net_conn_p->dev_link_status], net_conn_p->dev_link_status);
-
-    if (old_status != net_conn_p->dev_link_status) {
-        //cm_netconn_status_notify();
-    }
 
 
 netconn_done:
