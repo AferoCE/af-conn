@@ -148,7 +148,7 @@ static cm_conn_monitor_cb_t *cm_get_itf_conn_cb(uint32_t attributeId)
 
 static uint8_t cm_get_itf_state(cm_conn_monitor_cb_t *conn_cb_p)
 {
-    /* return value: (see device registry)
+    /* return value: (see device attribute registry)
      * 0 - Not Available/Broken
      * 1 - Up with no internet connectivity
      * 2 - Up with connection to Afero Cloud
@@ -166,7 +166,7 @@ static uint8_t cm_get_itf_state(cm_conn_monitor_cb_t *conn_cb_p)
         }
     }
 
-    // reaches here means that the interface is not availale.
+    // reaches here means that the interface is not available
     return (0);
 }
 
@@ -176,7 +176,7 @@ static uint8_t cm_get_itf_state(cm_conn_monitor_cb_t *conn_cb_p)
 void cm_attr_set_itf_state (cm_conn_monitor_cb_t  *conn_cb_p)
 {
     int8_t   itf_state = cm_get_itf_state(conn_cb_p);
-    int32_t  attributeId = AF_ATTR_CONNMGR_ETH_ITF_STATE;  //default to ethernet
+    int32_t  attributeId;
     int32_t  rc;
     uint8_t  set_attr = 1;
     static int8_t   last_wan_itf_state = -1;
@@ -201,11 +201,16 @@ void cm_attr_set_itf_state (cm_conn_monitor_cb_t  *conn_cb_p)
         }
         last_wifi_itf_state = itf_state;
     }
-    else {
+    else if (conn_cb_p->my_idx == CM_MONITORED_ETH_IDX) {
+        attributeId = AF_ATTR_CONNMGR_ETH_ITF_STATE;
         if (last_eth_itf_state == itf_state) {
             set_attr = 0;
         }
         last_eth_itf_state = itf_state;
+    }
+    else {
+        // Not one of the interfaces, do nothing
+        return;
     }
 
     if (set_attr) {
