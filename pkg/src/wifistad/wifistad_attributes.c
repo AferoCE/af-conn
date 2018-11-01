@@ -154,15 +154,21 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 		case AF_ATTR_WIFISTAD_CREDS:
 			wifi_cred = malloc (sizeof(wifi_cred_t));
 			hub_wifi_cred_t   *hub_wifi_cred = (hub_wifi_cred_t *)value;
-			uint8_t           len = strlen(hub_wifi_cred->key);
-			if ((wifi_cred) && (m->wifi_setup.who_init_setup != USER_REQUEST)) {
+			if (wifi_cred) {
+				// if we interrupted a Wi-Fi setup already in progress, free the old credentials
+				wifi_cred_t *old_creds = m->wifi_setup.data_p;
 				RESET_WIFI_SETUP(m,0);
+				if (old_creds) {
+					free(old_creds);
+				}
+
 				memset(wifi_cred, 0, sizeof(wifi_cred_t));
 				memcpy(wifi_cred->ssid, hub_wifi_cred->ssid, HUB_SSID_LEN);
 				memcpy(wifi_cred->key,  hub_wifi_cred->key, HUB_WIFI_CRED_LEN);
 
 				AFLOG_INFO("%s_wifi_cred:ssid=%s:received Wi-Fi credentials; posting setup request",
 							__func__, wifi_cred->ssid);
+
 				WIFI_SETUP_CONNECT_AP(m, wifi_cred, m->assoc_info.id);
 
 				// let's update the service with our setup state formost:
@@ -176,27 +182,10 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 
 				wifista_wpa_post_event(WPA_EVENT_ID_WIFI_CREDENTIALS, (void *) wifi_cred);
 				err = 0;
+			} else {
+				AFLOG_ERR("%s_malloc", __func__);
 			}
 
-			if (err) {
-				if (wifi_cred == NULL) {
-					AFLOG_ERR("%s_malloc", __func__);
-				}
-				else {
-					AFLOG_ERR("%s_setup_failed:ssid=%s,key_len=%d:user setup failed",
-							  __func__, hub_wifi_cred->ssid, len);
-				}
-				// set the WIFI_SETUP_STATE attribute so APPs can be notified.
-				m->wifi_setup.setup_state =((len==0) ? WIFI_STATE_HANDSHAKEFAILED : WIFI_STATE_NOTCONNECTED);
-				wifista_setup_send_rsp(&m->wifi_setup);
-
-				//  free the allocated memory
-				if (wifi_cred) {
-					free (wifi_cred);
-					wifi_cred = NULL;
-				}
-				RESET_WIFI_SETUP(m,1);
-			}
 			break;
 
 		case AF_ATTR_WIFISTAD_DEBUG_LEVEL: {
