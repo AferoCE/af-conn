@@ -120,7 +120,7 @@ static void wan_attr_on_notify(uint32_t attributeId, uint8_t *value, int length,
     }
 }
 
-static void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+static void on_uptime_get(int status, uint32_t attrId, uint8_t *value, int length, void *context)
 {
     if (context != NULL) {
         struct bit_rate_struct *br = (struct bit_rate_struct *)context;
@@ -149,7 +149,7 @@ static void on_uptime_get(uint8_t status, uint32_t attrId, uint8_t *value, int l
     }
 }
 
-static void on_usage_get(uint8_t status, uint32_t attrId, uint8_t *value, int length, void *context)
+static void on_usage_get(int status, uint32_t attrId, uint8_t *value, int length, void *context)
 {
     if (context != NULL) {
         struct bit_rate_struct *br = (struct bit_rate_struct *)context;
