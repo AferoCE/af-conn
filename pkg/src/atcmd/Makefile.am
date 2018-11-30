@@ -9,3 +9,4 @@ endif
 
 atcmd_SOURCES = atcmd.c
 atcmd_CFLAGS = -Wall -I../include $(CFLAGS_BUILD_TARGET)
+atcmd_LDADD = -laf_util

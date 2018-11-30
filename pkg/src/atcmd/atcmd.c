@@ -29,6 +29,8 @@ static const char sErrorString[] = "ERROR";
 /* returns -1 if error, 0 if OK, 1 if unknown */
 static int check_response(char *buf, int len, int printRes)
 {
+    af_log_buffer(LOG_DEBUG3, "check", buf, len);
+
     // Get rid of trailing carriage return
     if (len && buf[len - 1] == '\r') {
         buf[len - 1] = '\0';
@@ -60,15 +62,45 @@ static int write_device(int fd, char *buf)
     return 0;
 }
 
-static int read_device(int fd, char *buf, int wait_period, int printRes)
+static speed_t num_to_baud(int baud_num)
+{
+    speed_t retVal = B0;
+    switch(baud_num) {
+        case 50 : retVal = B50; break;
+        case 75 : retVal = B75; break;
+        case 110 : retVal = B110; break;
+        case 134 : retVal = B134; break;
+        case 150 : retVal = B150; break;
+        case 200 : retVal = B200; break;
+        case 300 : retVal = B300; break;
+        case 600 : retVal = B600; break;
+        case 1200 : retVal = B1200; break;
+        case 1800 : retVal = B1800; break;
+        case 2400 : retVal = B2400; break;
+        case 4800 : retVal = B4800; break;
+        case 9600 : retVal = B9600; break;
+        case 19200 : retVal = B19200; break;
+        case 38400 : retVal = B38400; break;
+        case 57600 : retVal = B57600; break;
+        case 115200 : retVal = B115200; break;
+        case 230400 : retVal = B230400; break;
+        case 460800 : retVal = B460800; break;
+        case 921600 : retVal = B921600; break;
+        default : break;
+    }
+    return retVal;
+}
+
+/* return -2 if timeout or -1 if other error */
+static int read_device(int fd, char *buf, int wait_period_ms, int printRes)
 {
     fd_set rfds;
     struct timeval tv;
     int result;
-    int bufPos = 0;
+    int start = 0, end = 0;
 
-    tv.tv_sec = wait_period;
-    tv.tv_usec = 0;
+    tv.tv_sec = wait_period_ms / 1000;
+    tv.tv_usec = 1000 * (wait_period_ms - tv.tv_sec * 1000);
 
     while(1)
     {
@@ -80,11 +112,10 @@ static int read_device(int fd, char *buf, int wait_period, int printRes)
             AFLOG_ERR("select:errno=%d:select failure", errno);
             return -1;
         } else if (result == 0) {
-            AFLOG_WARNING("timeout:wait_period=%d:read timed out", wait_period);
-            write_device(fd, "^c");
-            return -1;
+            /* timed out */
+            return -2;
         } else if (FD_ISSET(fd, &rfds)) {
-            int rc = read(fd, buf + bufPos, BUF_SIZE - bufPos);
+            int rc = read(fd, buf + end, BUF_SIZE - end);
             if (rc < 0) {
                 AFLOG_ERR("read:errno=%d:unable to read", errno);
                 return -1;
@@ -94,28 +125,21 @@ static int read_device(int fd, char *buf, int wait_period, int printRes)
             }
 
             /* check for overrun */
-            bufPos += rc;
-            if (bufPos > BUF_SIZE) {
-                AFLOG_ERR("overrun:buf_pos=%d:buffer overrun", bufPos);
+            end += rc;
+            if (end > BUF_SIZE) {
+                AFLOG_ERR("overrun:end=%d:buffer overrun", end);
                 return -1;
             }
-            buf[bufPos] = '\0';
 
             // Check for lines
-            int i, lastPos = 0;
-            for (i = 0; i < bufPos; i++) {
+            for (int i = start; i < end; i++) {
                 if (buf[i] == '\n') {
-                    buf[i] = '\0'; // replace the newline with a terimator
-                    int result = check_response(buf + lastPos, i - lastPos, printRes);
+                    buf[i] = '\0';
+                    int result = check_response(buf + start, i - start, printRes);
                     if (result <= 0) {
                         return result;
                     }
-                    lastPos = i+1;
-                }
-            }
-            if (lastPos < bufPos) {
-                for (i = 0; i < bufPos - lastPos; i++) {
-                     buf[i] = buf[lastPos + i];
+                    start = i+1;
                 }
             }
         }
@@ -124,7 +148,7 @@ static int read_device(int fd, char *buf, int wait_period, int printRes)
 
 void usage(char *argv0)
 {
-    fprintf(stderr, "usage: %s [-d <device>] [-w <wait_period>] <command>\n", argv0);
+    fprintf(stderr, "usage: %s [ -b <baud_rate> ] [-d <device>] [-w <wait_period>] <command>\n", argv0);
 }
 
 int main(int argc, char *argv[])
@@ -137,16 +161,25 @@ int main(int argc, char *argv[])
     char *cmd;
     int ret = -1;
     int opt;
+    speed_t baud = B115200;
 
     openlog("atcmd", LOG_PID, LOG_USER);
 
-    while ((opt = getopt(argc, argv,"d:w:")) != -1) {
+    while ((opt = getopt(argc, argv,"b:d:w:")) != -1) {
         switch (opt) {
             case 'd' :
                 device = optarg;
                 break;
             case 'w' :
                 wait_period = atoi(optarg);
+                break;
+            case 'b' :
+                baud = num_to_baud(atoi(optarg));
+                if (baud == B0) {
+                    fprintf(stderr, "unknown baud rate: %s\n", optarg);
+                    AFLOG_ERR("unknown baud rate: %s", optarg);
+                    exit(1);
+                }
                 break;
             default :
                 usage(argv[0]);
@@ -170,18 +203,32 @@ int main(int argc, char *argv[])
     }
 
     tcgetattr(fd, &ios);
-    if (cfsetispeed(&ios, B230400) < 0) {
-        AFLOG_ERR("baud:errno=%d:failed to change input baud rate", errno);
-        goto close_fd;
-    }
-    ios.c_lflag = 0;
+    cfsetispeed(&ios, baud);
+    cfsetospeed(&ios, baud);
+
+    ios.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
+                     | INLCR | IGNCR | ICRNL | IXON);
+    ios.c_oflag &= ~OPOST;
+    ios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    ios.c_cflag &= ~(CSIZE | PARENB);
+    ios.c_cflag |= CS8;
+
     tcsetattr(fd, TCSANOW, &ios);
 
-    if (write_device(fd, "ate0\r\n") < 0) {
+    /* clean out any remaining data */
+    if (read_device(fd, buf, 200, 0) == -1) {
         goto close_fd;
     }
 
-    if (read_device(fd, buf, 1, 0) < 0) {
+    if (write_device(fd, "ate0\r") < 0) {
+        goto close_fd;
+    }
+
+    ret = read_device(fd, buf, 2000, 0);
+    if (ret < 0) {
+        if (ret == -2) {
+            AFLOG_WARNING("timeout on ate0 after 2000 ms");
+        }
         goto close_fd;
     }
 
@@ -190,12 +237,15 @@ int main(int argc, char *argv[])
         goto close_fd;
     }
 
-	if (write_device(fd, "\r\n") < 0) {
+    if (write_device(fd, "\r") < 0) {
         goto close_fd;
     }
 
     // read the device
-    ret = read_device(fd, buf, wait_period, 1);
+    ret = read_device(fd, buf, wait_period * 1000, 1);
+    if (ret == -2) {
+        AFLOG_WARNING("timeout:wait_period=%d:read timed out", wait_period);
+    }
 
 close_fd:
     close(fd);
