@@ -37,6 +37,6 @@ extern af_key_value_pair_t g_netif_pairs[__NETIF_NUM_INTERFACES];
 #endif
 
 #define NETIF_NAME(_x) (g_netif_pairs[_x].value)
-#define NETIF_NAMES_GET() (af_util_parse_key_value_pair_file("/lib/afero_netif_names",g_netif_pairs,__NETIF_NUM_INTERFACES))
+#define NETIF_NAMES_GET() (af_util_parse_key_value_pair_file("/etc/af-conn/netif_names",g_netif_pairs,__NETIF_NUM_INTERFACES))
 
 #endif // __NETIF_NAMES_H__

@@ -66,7 +66,7 @@ cm_dns_info_t    af_wl_dns_db;
 
 
 // File contains the whitelist of afero service
-#define AFERO_WHITELIST_FILE    "/etc/config/afero_whitelist.txt"
+#define AFERO_WHITELIST_FILE    "/etc/af-conn/whitelist"
 
 //
 // DNS extraction
@@ -761,12 +761,12 @@ cm_dns_expire_wl_ip(cm_wl_entry_t  *wl_dn_entry_p)
                              wl_dn_entry_p->ip_rec[i].ip_addr,
                              inet_ntoa(addr.sin_addr));
 
-                af_util_system("/usr/bin/fwcfg del %s %s",
+                af_util_system("/usr/lib/af-conn/fwcfg.sh del %s %s",
                                inet_ntoa(addr.sin_addr),
                                wl_dn_entry_p->service_name);
 
                 if (cm_wifi_opmode == HUB_WIFI_OPMODE_MASTER) {
-                    af_util_system("/usr/bin/fwcfg del_forwarding %s %s",
+                    af_util_system("/usr/lib/af-conn/fwcfg.sh del_forwarding %s %s",
                     inet_ntoa(addr.sin_addr), wl_dn_entry_p->service_name);
                 }
                 wl_dn_entry_p->ip_rec[i].ttl = CM_DNS_IP_TTL_NONE;
@@ -843,13 +843,13 @@ int cm_manage_dns_wl_ip_list(cm_wl_entry_t      *wl_dn_entry_p,
                      (int) iprec_p->updated_time, buf);
 
         // ONLY add if the rule is not already in it.
-        af_util_system("/usr/bin/fwcfg add %s \"%s\" 1",
+        af_util_system("/usr/lib/af-conn/fwcfg.sh add %s \"%s\" 1",
                         inet_ntoa(addr.sin_addr),
                         wl_dn_entry_p->service_name);
 
         // if this is AP (ie. master BENTO)
         if (cm_wifi_opmode == HUB_WIFI_OPMODE_MASTER) {
-            af_util_system("/usr/bin/fwcfg add_forwarding %s \"%s\" 1",
+            af_util_system("/usr/lib/af-conn/fwcfg.sh add_forwarding %s \"%s\" 1",
             inet_ntoa(addr.sin_addr), wl_dn_entry_p->service_name);
         }
 
@@ -872,13 +872,13 @@ int cm_manage_dns_wl_ip_list(cm_wl_entry_t      *wl_dn_entry_p,
             wl_dn_entry_p->num_iprec++;
             rc = 0;
 
-            af_util_system("/usr/bin/fwcfg add %s %s",
+            af_util_system("/usr/lib/af-conn/fwcfg.sh add %s %s",
                             inet_ntoa(addr.sin_addr),
                             wl_dn_entry_p->service_name);
 
             // if this is AP (ie. master BENTO)
             if (cm_wifi_opmode == HUB_WIFI_OPMODE_MASTER) {
-                af_util_system("/usr/bin/fwcfg add_forwarding %s %s",
+                af_util_system("/usr/lib/af-conn/fwcfg.sh add_forwarding %s %s",
                 inet_ntoa(addr.sin_addr), wl_dn_entry_p->service_name);
             }
         }

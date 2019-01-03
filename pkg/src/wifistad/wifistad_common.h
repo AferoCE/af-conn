@@ -10,7 +10,7 @@
 #define __WIFISTAD_COMMON_H_
 
 // wifi event hook script
-#define WIFI_EVENT_SH_FILE      "/usr/bin/wifi_event.sh"
+#define WIFI_EVENT_SH_FILE      "/usr/lib/af-conn/wifi_event.sh"
 
 // utilties
 int8_t file_exists(const char *filename);

@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
     AFLOG_INFO("start_connmgr:Firewall is %s", (g_enable_fw==1)?"enabled":"disabled");
 	if (g_enable_fw == 1) {
 		/* setup the Afero Firewall */
-		if (af_util_system("/etc/config/firewall.user") < 0) {
+		if (af_util_system("/usr/lib/af-conn/init_firewall.sh") < 0) {
 			AFLOG_ERR("CONNMGR:: starting FIREWALL failed");
 		}
 		sleep(1);  // allow fw time to finish
@@ -276,7 +276,7 @@ int main(int argc, char *argv[])
 
 
     if (CM_GET_INUSE_NETCONN_CB() != NULL) {
-        if (af_util_system("/usr/bin/switch_route_to.sh %s", cm_itf_inuse_p->dev_name) < 0) {
+        if (af_util_system("/usr/lib/af-conn/switch_route.sh %s", cm_itf_inuse_p->dev_name) < 0) {
             AFLOG_ERR("CONNMGR:: Setting up route for NETWORK(%s) failed",
                       cm_itf_inuse_p->dev_name);
         }

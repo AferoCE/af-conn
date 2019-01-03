@@ -296,7 +296,7 @@ DONE_SWITCHING:
 		connmgr_usage_stats_update(switch_to_p->my_idx);
 
 		/* update the routes */
-		rc = af_util_system("/usr/bin/switch_route_to.sh %s", switch_to_p->dev_name);
+		rc = af_util_system("/usr/lib/af-conn/switch_route.sh %s", switch_to_p->dev_name);
 		if (rc < 0) {
 			AFLOG_ERR("cm_check_update_inuse_netconn:: ROUTE SWITCHING TO NETWORK(%s) failed",
 					switch_to_p->dev_name);

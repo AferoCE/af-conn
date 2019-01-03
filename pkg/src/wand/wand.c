@@ -137,7 +137,7 @@ static pthread_mutex_t sWandStateMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void prv_handle_wand_event(wand_event_t event);
 
-#define CARRIER_APN_PATH "/etc/wan/carriers"
+#define CARRIER_APN_PATH "/etc/af-conn/carriers"
 #define MAX_COLUMNS 6
 
 static int prv_get_apn_info(char *iccid, ril_data_call_request_t *req)
@@ -237,7 +237,7 @@ static int prv_get_apn_info(char *iccid, ril_data_call_request_t *req)
 static int prv_set_up_network(ril_data_call_response_t *dataCallRsp)
 {
     /* configure WAN network interface */
-    if (af_util_system("/usr/bin/wannetwork up \"%s\" 24 \"%s\" \"%s\" \"%s\" 64 \"%s\" \"%s\"",
+    if (af_util_system("/usr/lib/af-conn/wannetwork up \"%s\" 24 \"%s\" \"%s\" \"%s\" 64 \"%s\" \"%s\"",
         dataCallRsp->ip_v4, dataCallRsp->dns1_v4, dataCallRsp->dns2_v4,
         dataCallRsp->ip_v6, dataCallRsp->dns1_v6, dataCallRsp->dns2_v6) < 0) {
         AFLOG_ERR("prv_set_up_network:::failed to bring up WAN network interface");
@@ -254,7 +254,7 @@ static void prv_on_network_down(int event, void *context)
 
 static int prv_shut_down_network(void)
 {   /* configure WAN network interface */
-    if (af_util_system("/usr/bin/wannetwork down") < 0) {
+    if (af_util_system("/usr/lib/af-conn/wannetwork down") < 0) {
         AFLOG_ERR("prv_shut_down_network:::failed to shut down network");
         return -1;
     }
@@ -403,7 +403,7 @@ static void prv_on_idle_event(evutil_socket_t fd, short what, void *arg)
 
 /* Code running in worker thread */
 
-#define WANCONTROL "/usr/bin/wancontrol "
+#define WANCONTROL "/usr/lib/af-conn/wancontrol "
 #define WANCONTROL_ON    WANCONTROL "on"
 #define WANCONTROL_OFF   WANCONTROL "off"
 

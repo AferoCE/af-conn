@@ -33,7 +33,7 @@
 
 #include "build_info.h"
 
-#define NET_CAPABILITY_FILE  "/usr/bin/afero_net_cap"
+#define NET_CAPABILITY_FILE  "/usr/lib/af-conn/net_capabilities"
 
 
 // Macros
