@@ -8,5 +8,5 @@ CFLAGS_BUILD_TARGET = -DBUILD_TARGET_RELEASE
 endif
 
 atcmd_SOURCES = atcmd.c
-atcmd_CFLAGS = -Wall -I../include $(CFLAGS_BUILD_TARGET)
+atcmd_CFLAGS = -std=gnu99 -Wall -I../include $(CFLAGS_BUILD_TARGET)
 atcmd_LDADD = -laf_util

@@ -1,8 +1,0 @@
-#!/bin/sh
-
-if [ /bin/pidof wifistad ]; then
-	/usr/bin/killall wifistad
-fi
-
-/bin/rm -f /tmp/wpa_ctrl*
-/usr/bin/wifistad

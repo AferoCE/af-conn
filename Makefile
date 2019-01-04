@@ -42,7 +42,19 @@ define Package/af-conn/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/connmgr $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/wifistad $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/include/wifista_shared_types.h $(STAGING_DIR)/usr/include
-	$(CP) -rp $(CURDIR)/pkg/files/* $(1)
+	$(CP) -rp $(CURDIR)/files/bento/* $(1)
+#
+#The afero_whitelist has two files: afero_whitelist.[dev/prod]
+#Based on the BUILD_TYPE environment var, we copy the appropriate file to
+#afero_whitelist.txt
+#
+ifeq ($(BUILD_TYPE), dev)
+	$(CP) $(CURDIR)/files/bento/etc/af-conn/afero_whitelist.dev $(1)/etc/af-conn/whitelist
+else
+	$(CP) $(CURDIR)/files/bento/etc/af-conn/afero_whitelist.prod $(1)/etc/af-conn/whitelist
+endif
+	$(RM) -rf $(1)/etc/af-conn/afero_whitelist.prod
+	$(RM) -rf $(1)/etc/af-conn/afero_whitelist.dev
 endef
 
 define Build/Clean
