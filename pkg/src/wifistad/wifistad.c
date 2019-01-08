@@ -40,7 +40,6 @@
 #include "wpa_manager.h"
 #include "wifistad.h"
 #include "mac_whitelist.h"
-#include "../include/hub_config.h"
 #include "wifistad_common.h"
 #define NETIF_NAMES_ALLOCATE
 #include "../include/netif_names.h"
@@ -568,7 +567,7 @@ static void prv_state_machine(evutil_socket_t fd, short events, void *param)
 					break;
 
 				case WIFISTAD_EVENT_DO_NETCHECK :
-					if (check_network(s_evbase, echo_service_host_p, m->ctrl_iface_name, NETCHECK_USE_ECHO,
+					if (check_network(s_evbase, ECHO_HOST, m->ctrl_iface_name, NETCHECK_USE_ECHO,
 									  on_netcheck_complete, (void *)s_netcheck_network_id, ECHO_CHECK_TIMEOUT_MS) < 0) {
 						AFLOG_ERR("prv_wpa_event_callback_echo_fail:errno=%d", errno);
 					}
@@ -1196,8 +1195,6 @@ int main()
 
 	// initialize the MAC whitelist data structures.
 	wifistad_init_mac_wl();
-
-	hub_config_service_env_init();
 
 	result = evthread_use_pthreads();
 	if (result != 0) {

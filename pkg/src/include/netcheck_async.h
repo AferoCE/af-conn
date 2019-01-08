@@ -10,6 +10,14 @@
 
 #include <event2/event.h>
 
+#ifdef BUILD_TYPE_DEV
+#define ECHO_HOST "echo.dev.afero.io"
+#else
+#define ECHO_HOST "echo.afero.io"
+#endif
+
+#define ECHO_SERVICE_PORT 80
+
 typedef enum {
     NETCHECK_USE_ECHO = 0,
     NETCHECK_USE_PING,

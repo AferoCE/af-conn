@@ -28,7 +28,6 @@
 #include <event2/event.h>
 #include <pthread.h>
 #include <af_log.h>
-#include "../include/hub_config.h"
 #include "../include/netcheck_async.h"
 
 const char  *PING_ADDR = "8.8.8.8";

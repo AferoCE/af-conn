@@ -181,7 +181,6 @@ int main(int argc, char *argv[])
     }
 
     /* init afero service environment based variables, etc */
-    hub_config_service_env_init();
     cm_wifi_opmode = hub_wireless_opmode(NETIF_NAME(WIFIAP_INTERFACE_0));
 
     /* create base event */

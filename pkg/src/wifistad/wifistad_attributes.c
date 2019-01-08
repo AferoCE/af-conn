@@ -140,7 +140,6 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 {
 	wifi_cred_t    *wifi_cred = NULL;
 	wpa_manager_t  *m = wifista_get_wpa_mgr();
-	int            err = 1;
 	int            status = AF_ATTR_STATUS_OK;
 
 	if (value == NULL) {
@@ -181,7 +180,6 @@ void wifistad_attr_on_owner_set(uint32_t attributeId, uint16_t setId, uint8_t *v
 				wifista_set_wifi_steady_state(WIFI_STATE_PENDING);
 
 				wifista_wpa_post_event(WPA_EVENT_ID_WIFI_CREDENTIALS, (void *) wifi_cred);
-				err = 0;
 			} else {
 				AFLOG_ERR("%s_malloc", __func__);
 			}

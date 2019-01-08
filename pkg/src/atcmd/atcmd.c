@@ -29,7 +29,7 @@ static const char sErrorString[] = "ERROR";
 /* returns -1 if error, 0 if OK, 1 if unknown */
 static int check_response(char *buf, int len, int printRes)
 {
-    af_log_buffer(LOG_DEBUG3, "check", buf, len);
+    af_log_buffer(LOG_DEBUG3, "check", (uint8_t *)buf, len);
 
     // Get rid of trailing carriage return
     if (len && buf[len - 1] == '\r') {
