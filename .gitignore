@@ -37,3 +37,6 @@
 /pkg/src/wifid/Makefile
 /pkg/src/wifid/wifid
 /pkg/stamp-h1
+/pkg/compile
+/pkg/oe-logs
+/pkg/oe-workdir
